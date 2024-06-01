@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="robots" content="noindex,follow">
+    <meta content="MIRAIは、DiscordのセキュリティBOTです。" name="description">
+    <meta name="keywords" content="MIRAI,Discord,BOT,セキュリティ,認証">
+    <meta name="author" content="JUN-SUZU">
+    <meta name="cpr" content="© 2024 JUN-SUZU">
+    <meta name="language" content="ja">
+    <meta name="format-detection" content="telephone=no,email=no,address=no">
+    <meta name="theme-color" content="#7fffd2">
+    <link rel="canonical" href="https://mirai.jun-suzu.net/">
+    <link rel="icon" href="../assets/img/favicon.ico">
+    <title>MIRAI</title>
+    <link rel="stylesheet" type="text/css" href="../css/reset.css">
+    <link rel="stylesheet" type="text/css" href="../css/base.css">
+    <link rel="stylesheet" type="text/css" href="../css/contents.css">
+    <script src="https://www.google.com/recaptcha/enterprise.js" async defer></script>
+    <script src="../js/auth.js"></script>
+</head>
+
+<body>
+    <header>
+        <a href="https://mirai.jun-suzu.net" class="logo">
+            <h1>MIRAI</h1>
+        </a>
+    </header>
+    <main>
+        <section>
+            <h2>認証</h2>
+            <form id="auth" class="form" action="https://mirai.jun-suzu.net/auth/api/" method="post">
+                <!-- 言語の確認 -->
+                <div class="form__group">
+                    <label for="lang">言語</label>
+                    <select name="lang" id="lang">
+                        <option value="ja">日本語</option>
+                        <option value="en">English</option>
+                        <option value="zh">中文</option>
+                        <option value="ko">한국어</option>
+                        <option value="es">Español</option>
+                        <option value="fr">Français</option>
+                        <option value="de">Deutsch</option>
+                        <option value="it">Italiano</option>
+                        <option value="ru">Русский</option>
+                        <option value="pt">Português</option>
+                        <option value="ar">العربية</option>
+                        <option value="hi">हिन्दी</option>
+                    </select>
+                </div>
+                <!-- 年齢の確認 -->
+                <div class="form__group">
+                    <label for="age">年齢</label>
+                    <input type="number" name="age" id="age" min="0" max="120" required>
+                </div>
+                <!-- 人間であるかどうかの確認 -->
+                <div class="form__group">
+                    <label for="human">人間であることを確認してください</label>
+                    <div class="g-recaptcha" data-sitekey="6Lc-KespAAAAAAXHezZCb2OKM63wu7MxM3Su7IU_" data-action="auth">
+                    </div>
+                </div>
+                <div class="form__group">
+                    <input type="hidden" id="userID" name="userID" value="">
+                    <input type="hidden" id="miraiKey" name="miraiKey" value="">
+                </div>
+                <!-- 送信ボタン -->
+                <div class="form__group">
+                    <button onclick="send()">送信</button>
+                </div>
+            </form>
+        </section>
+    </main>
+    <footer>
+        <div class="foot__container">
+            <a href="../privacy/">プライバシーポリシー</a>
+            <a href="../terms/">利用規約</a>
+            <a href="../contact/">お問い合わせ</a>
+            <a href="../map/">サイトマップ</a>
+            <a href="../donate/">寄付</a>
+        </div>
+        <a href="https://mirai.jun-suzu.net" class="logo">
+            <h1>MIRAI</h1>
+        </a>
+        <p class="cpr">
+            © 2024 JUN-SUZU
+        </p>
+    </footer>
+
+</body>
+
+</html>

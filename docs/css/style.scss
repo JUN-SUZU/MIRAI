@@ -1,0 +1,41 @@
+$background-color: #2b2b2b;
+$color: #7fffd2;
+a.link__invite {
+  display: block;
+  margin: 1rem auto;
+  max-width: 200px;
+  padding: 0.5rem;
+  text-align: center;
+  background-color: $color;
+  color: black;
+  font-weight: bold;
+  border-radius: 0.5rem;
+  transition: 0.3s;
+  &:hover {
+    filter: brightness(1.1);
+    transform: scale(1.1);
+  }
+}
+.place__holder {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  .panel__function {
+    flex-grow: 1;
+    margin: 0.5rem;
+    padding: 1rem;
+    border-radius: 1rem;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  }
+}
+.saveButton {
+  display: none;
+  background-color: $color;
+  font-size: 1.2rem;
+  width: calc(5vw + 4rem);
+  height: calc(1vw + 3rem);
+  border-radius: 0.5rem;
+  position: sticky;
+  bottom: 10vh;
+  left: calc(90vw - 2rem);
+}
