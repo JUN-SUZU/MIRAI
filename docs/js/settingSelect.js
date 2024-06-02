@@ -3,7 +3,7 @@ let miraiKey = localStorage.getItem('miraiKey');
 if (!userID || !miraiKey) {
     window.location.href = '/login/';
 }
-fetch('/dashboard/servers/api/', {
+fetch('/setting/servers/api/', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
@@ -21,7 +21,7 @@ fetch('/dashboard/servers/api/', {
     }
 });
 function getServerList() {
-    fetch('/dashboard/servers/api/', {
+    fetch('/setting/servers/api/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -34,7 +34,7 @@ function getServerList() {
             let servers = res;
             servers.forEach(server => {
                 let option = document.createElement('a');
-                option.href = `/dashboard/server/?id=${server.id}`;
+                option.href = `/setting/server/?id=${server.id}`;
                 option.innerText = server.name;
                 document.getElementById('servers').appendChild(option);
             });

@@ -1,6 +1,6 @@
 const config = require('./config.json');
 // discord.js
-const { ActionRowBuilder, ActivityType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits } = require('discord.js');
+const { ActionRowBuilder, ActivityType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits, PermissionsBitField } = require('discord.js');
 // http
 const http = require('http');
 // reCAPTCHA Enterprise
@@ -8,12 +8,14 @@ const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-en
 // other modules
 const fs = require('fs');
 const cron = require('node-cron');
+const { channel } = require('diagnostics_channel');
 const baseColor = '#7fffd2';
 
 const httpServer = http.createServer((req, res) => {
     let url = req.url.replace(/\?.*$/, '');
     let method = req.method;
     let ipadr = getIPAddress(req);
+    let vpn = checkVPN(ipadr);
     if (method === 'GET') {
         console.log(`requested: GET ${url} data: ${req.headers['user-agent']} ip: ${ipadr}`);
         if (url.endsWith('/')) url += 'index.html';
@@ -55,6 +57,7 @@ const httpServer = http.createServer((req, res) => {
                 accountData[discordID].lang = lang;
                 accountData[discordID].age = age;
                 accountData[discordID].ip = ipadr;
+                accountData[discordID].vpn = vpn;
                 accountData[discordID].date = new Date().toLocaleString();
                 createAssessment(token).then((score) => {
                     if (score >= 0.8) {
@@ -116,7 +119,7 @@ const httpServer = http.createServer((req, res) => {
                         authDate: userData.date
                     }));
                 }
-                else if (url === '/dashboard/servers/api/') {
+                else if (url === '/setting/servers/api/') {
                     if (data.preflight) {
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'success' }));
@@ -134,7 +137,7 @@ const httpServer = http.createServer((req, res) => {
                     }
                     let servers = [];
                     let serverData = JSON.parse(fs.readFileSync(`./data/server.json`))
-                    client.guilds.cache.forEach((guild) => {
+                    client.guilds.cache.forEach(guild => {
                         if (!guild.members.cache.has(data.userID)) {
                             return;// メンバーでない場合はスキップ
                         }
@@ -148,7 +151,7 @@ const httpServer = http.createServer((req, res) => {
                                 });
                             }
                         }
-                        else if (guild.members.cache.has(data.userID).permissions.has('ADMINISTRATOR')) {
+                        else if (guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.ADMINISTRATOR)) {
                             // サーバーの初期設定がされている場合
                             // 管理者権限を持っている場合は表示
                             servers.push({
@@ -160,7 +163,7 @@ const httpServer = http.createServer((req, res) => {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(servers));
                 }
-                else if (url === '/dashboard/server/api/') {
+                else if (url === '/setting/server/api/') {
                     let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
                     let userData = accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
@@ -171,21 +174,34 @@ const httpServer = http.createServer((req, res) => {
                     let serverData = JSON.parse(fs.readFileSync(`./data/server.json`));
                     if (!serverData[data.serverID]) {
                         serverData[data.serverID] = {
-                            serverName: client.guilds.cache.get(data.serverID).name,
                             country: null,
                             lang: null,
                             danger: true,
                             notice: true,
-                            channel: [],
+                            channel: null,
+                            role: null,
                             robot: true,
                             vpn: true,
                             excluded: []
                         };
                     }
+                    serverData[data.serverID].serverName = client.guilds.cache.get(data.serverID).name;
+                    serverData[data.serverID].channels = client.guilds.cache.get(data.serverID).channels.cache.map((channel) => {
+                        return {
+                            id: channel.id,
+                            name: channel.name
+                        };
+                    });
+                    serverData[data.serverID].roles = client.guilds.cache.get(data.serverID).roles.cache.map((role) => {
+                        return {
+                            id: role.id,
+                            name: role.name
+                        };
+                    });
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(serverData[data.serverID]));
                 }
-                else if (url === '/dashboard/server/update/api/') {
+                else if (url === '/setting/server/update/api/') {
                     let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
                     let userData = accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
@@ -215,6 +231,29 @@ function getIPAddress(req) {
     } else {
         return req.socket.remoteAddress;
     }
+}
+
+let vpnList = JSON.parse(fs.readFileSync('./data/vpn.json'));
+
+function checkVPN(ipadr) {
+    let vpn = false;
+    // http://ip-api.com/json/{query}?fields=status,message,country,countryCode,region,city,timezone,isp,org,proxy にアクセスしてVPNかどうかを判定
+    if (vpnList[ipadr]) {
+        vpn = vpnList[ipadr].vpn;
+        return vpn;
+    }
+    else {
+        vpnList[ipadr] = {};
+    }
+    fetch(`http://ip-api.com/json/${ipadr}?fields=proxy`)
+        .then(response => response.json())
+        .then(data => {
+            vpn = data.proxy;
+            console.log(`VPN: ${vpn}`);
+            vpnList[ipadr].vpn = vpn;
+            fs.writeFileSync('./data/vpn.json', JSON.stringify(vpnList, null, 4));
+            return vpn;
+        });
 }
 
 async function getDiscordToken(code) {
@@ -321,19 +360,18 @@ client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 client.on('guildCreate', async (guild) => {
-    // サーバーの所有者にダッシュボードのURLをDMで送信
+    // サーバーの所有者に設定画面のURLをDMで送信
     const owner = await guild.fetchOwner();
-    owner.send(`このBotのダッシュボードはこちらです: ${config.url}/dashboard/server/?id=${guild.id}`);
+    owner.send(`このBotの設定画面はこちらです: ${config.url}/setting/server/?id=${guild.id}`);
 });
 // 新規メンバー参加時のイベント
 client.on('guildMemberAdd', async (member) => {
     // 認証要求メッセージを送信
     const embed = new EmbedBuilder()
         .setTitle('認証')
-        .setDescription('認証を行うには、リンクにアクセスしてください。自宅のネットワークからアクセスすることをお勧めします。')
+        .setDescription('認証を行うには、リンクにアクセスしてください。自宅のネットワークからアクセスすることをお勧めします。\n' +
+            `こちらのリンクをクリックしてください: [認証](${config.url}/login/)`)
         .setColor(baseColor)
-        .setURL(`${config.url}/login/`)
-        .setFooter('認証が完了するまで、このサーバーのチャンネルは利用できません。');
     try {
         await member.send({ embeds: [embed] });
     }

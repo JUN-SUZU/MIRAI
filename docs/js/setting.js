@@ -7,9 +7,9 @@ if (!userID || !miraiKey) {
     window.location.href = '/login/';
 }
 if (!serverID) {
-    // window.location.href = '/dashboard/';
+    // window.location.href = '/setting/';
 }
-fetch('/dashboard/server/api/', {
+fetch('/setting/server/api/', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
@@ -32,32 +32,48 @@ fetch('/dashboard/server/api/', {
             document.getElementById('danger').checked = data.danger;
             // danger
             document.getElementById('noticeDM').checked = data.notice;// true: DM, false: Channel
+            document.getElementById('noticeChannel').checked = !data.notice;
             // noticeDM
             // noticeChannel
-            data.channel.forEach((channel) => {
+            data.channels.forEach((channel) => {
                 let option = document.createElement('option');
                 option.value = channel.id;
                 option.innerText = channel.name;
                 document.getElementById('channel').appendChild(option);
             });
+            if (data.channel) {
+                document.getElementById('channel').value = data.channel;
+            }
             if (!data.notice) {
                 document.getElementById('channel').style.display = 'block';
             }
             // channel
+            data.roles.forEach((role) => {
+                let option = document.createElement('option');
+                option.value = role.id;
+                option.innerText = role.name;
+                document.getElementById('role').appendChild(option);
+            });
+            if (data.role) {
+                document.getElementById('role').value = data.role;
+            }
+            // role
             // robot
             // vpn
             // exclude
-            data.excluded.forEach((excluded) => {
-                let user = document.createElement('div');
-                user.className = 'user';
-                user.id = excluded.id;
-                user.innerText = excluded.name;
-                document.getElementById('excluded').appendChild(user);
-            });
+            if (data.excluded.length !== 0) {
+                data.excluded.forEach((excluded) => {
+                    let user = document.createElement('div');
+                    user.className = 'user';
+                    user.id = excluded;
+                    user.innerText = excluded;
+                    document.getElementById('excluded').appendChild(user);
+                });
+            }
             // excluded
         });
     } else {
-        window.location.href = '/dashboard/';
+        window.location.href = '/setting/';
     }
 });
 
@@ -101,6 +117,9 @@ function noticeChange() {
 document.getElementById('channel').addEventListener('change', () => {
     showSaveButton();
 });
+document.getElementById('role').addEventListener('change', () => {
+    showSaveButton();
+});
 document.getElementById('robot').addEventListener('change', () => {
     showSaveButton();
 });
@@ -134,7 +153,8 @@ document.getElementById('save').addEventListener('click', () => {
         lang: document.getElementById('specificLang').checked ? document.getElementById('lang').value : null,
         danger: document.getElementById('danger').checked,
         notice: document.getElementById('noticeDM').checked,
-        channel: document.getElementById('channel').value,
+        channel: document.getElementById('noticeDM').checked ? null : document.getElementById('channel').value,
+        role: document.getElementById('role').value,
         robot: document.getElementById('robot').checked,
         vpn: document.getElementById('vpn').checked,
         excluded: [],
@@ -142,7 +162,7 @@ document.getElementById('save').addEventListener('click', () => {
     document.getElementById('excluded').childNodes.forEach((user) => {
         data.excluded.push(user.id);
     });
-    fetch('/dashboard/server/update/api/', {
+    fetch('/setting/server/update/api/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
