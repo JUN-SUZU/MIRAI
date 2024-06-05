@@ -20,7 +20,7 @@ a.link__invite:hover {
   justify-content: center;
   flex-wrap: wrap;
 }
-.place__holder .panel__function {
+.place__holder .panel__feature {
   flex-grow: 1;
   margin: 0.5rem;
   padding: 1rem;

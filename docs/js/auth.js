@@ -7,6 +7,6 @@ function send() {
     document.getElementById('userID').value = userID;
     document.getElementById('miraiKey').value = miraiKey;
     grecaptcha.enterprise.ready(async () => {
-        grecaptcha.enterprise.execute('6LcJ6ukpAAAAAKGoAzD1K_wctq2FhVtxSMrywuU1', { action: 'auth' });
+        grecaptcha.enterprise.execute('6Lc-KespAAAAAAXHezZCb2OKM63wu7MxM3Su7IU_', { action: 'auth' });
     });
 }

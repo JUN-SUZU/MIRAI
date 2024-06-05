@@ -1,7 +1,14 @@
 let userID = localStorage.getItem('userID');
 let miraiKey = localStorage.getItem('miraiKey');
 if (userID && miraiKey) {
-    window.location.href = '/profile/';
+    // ログイン済みです。と表示し、OKを押すとプロフィールページに遷移キャンセルを押すとログアウトします。
+    let result = confirm('You are already logged in. Do you want to log out?');
+    if (result) {
+        localStorage.removeItem('userID');
+        localStorage.removeItem('miraiKey');
+    } else {
+        window.location.href = '/profile/';
+    }
 }
 // GETのパラメータを取得
 let url = new URL(window.location.href);

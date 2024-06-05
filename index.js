@@ -29,7 +29,11 @@ const httpServer = http.createServer((req, res) => {
                 res.writeHead(404, { 'Content-Type': 'text/plain' });
                 res.end('Not Found');
             } else {
-                res.writeHead(200);
+                if (url.endsWith('.html')) res.writeHead(200, { 'Content-Type': 'text/html' });
+                else if (url.endsWith('.css')) res.writeHead(200, { 'Content-Type': 'text/css' });
+                else if (url.endsWith('.js')) res.writeHead(200, { 'Content-Type': 'text/javascript' });
+                else if (url.endsWith('.ico')) res.writeHead(200, { 'Content-Type': 'image/x-icon' });
+                else res.writeHead(200);
                 res.end(data);
             }
         });
@@ -70,6 +74,11 @@ const httpServer = http.createServer((req, res) => {
                         res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     }
                     fs.writeFileSync('./data/account.json', JSON.stringify(accountData, null, 4));
+                    client.guilds.cache.forEach((guild) => {
+                        if (guild.members.cache.has(discordID)) {
+                            updateRole(guild);
+                        }
+                    });
                 });
                 return;
             }
@@ -120,14 +129,6 @@ const httpServer = http.createServer((req, res) => {
                     }));
                 }
                 else if (url === '/setting/servers/api/') {
-                    if (data.preflight) {
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ result: 'success' }));
-                        client.guilds.cache.forEach((guild) => {
-                            guild.members.fetch();
-                        });
-                        return;
-                    }
                     let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
                     let userData = accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
@@ -215,6 +216,7 @@ const httpServer = http.createServer((req, res) => {
                     fs.writeFileSync(`./data/server.json`, JSON.stringify(serverData, null, 4));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ result: 'success' }));
+                    updateRole(client.guilds.cache.get(data.serverID));
                 }
             } catch (e) {
                 console.error(e);
@@ -358,11 +360,18 @@ const client = new Client({
 });
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
+    client.user.setActivity('Mirai', { type: ActivityType.WATCHING });
+    client.guilds.cache.forEach(async (guild) => {
+        await guild.members.fetch();
+        updateRole(guild);
+    });
 });
 client.on('guildCreate', async (guild) => {
     // サーバーの所有者に設定画面のURLをDMで送信
     const owner = await guild.fetchOwner();
     owner.send(`このBotの設定画面はこちらです: ${config.url}/setting/server/?id=${guild.id}`);
+    // サーバーのメンバーを取得
+    guild.members.fetch();
 });
 // 新規メンバー参加時のイベント
 client.on('guildMemberAdd', async (member) => {
@@ -376,8 +385,88 @@ client.on('guildMemberAdd', async (member) => {
         await member.send({ embeds: [embed] });
     }
     catch (e) {
-        console.error(e);
+        console.log('Could not send DM');
     }
 });
+
+client.on('guildMemberRemove', async (member) => {
+    console.log(`${member.user.tag} has left the server`);
+});
+
+client.on('messageCreate', async (message) => {
+    let content = message.content;
+    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`))[message.guild.id];
+    if (!serverData) {
+        return;
+    }
+    // bad keyword 'onlyfan' 'leaks' 'nsfw' 大文字小文字を区別しない
+    // @everyone が必ず含まれている場合のみ
+    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i)) && content.includes('@everyone') && serverData.danger) {
+        let blacklist = JSON.parse(fs.readFileSync('./data/blacklist.json'));
+        if (!blacklist[message.author.id]) {
+            blacklist[message.author.id] = {}
+        }
+        blacklist[message.author.id].count = (blacklist[message.author.id].count || 0) + 1;
+        if (!blacklist[message.author.id].log) {
+            blacklist[message.author.id].log = [];
+        }
+        blacklist[message.author.id].log.push({
+            date: new Date().toLocaleString(),
+            message: content,
+            server: message.guild.name,
+            channel: message.channel.name,
+        });
+        fs.writeFileSync('./data/blacklist.json', JSON.stringify(blacklist, null, 4));
+        message.delete();
+        message.reply('不適切なメッセージが検出されたため削除しました。');
+        // タイムアウトする
+        message.author.timeout(60 * 60 * 1000, '不適切なメッセージを送信したため')
+            .then(() => console.log(`${message.author.tag} has been timed out`))
+            .catch(console.error);
+    }
+});
+
+// 1日に1回メンバーリストの修正を行う
+cron.schedule('0 0 * * *', () => {
+    client.guilds.cache.forEach((guild) => {
+        updateRole(guild);
+    });
+});
+
+async function updateRole(guild) {
+    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`))[guild.id];
+    let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
+    if (!serverData) {
+        return;
+    }
+    let role = guild.roles.cache.get(serverData.role);
+    if (!role) {
+        return;
+    }
+    guild.members.cache.forEach((member) => {
+        if (member.user.bot) return;
+        try {
+            if (serverData.excluded.includes(member.user.username)) {
+                if (!member.roles.cache.has(role.id)) {
+                    member.roles.add(guild.roles.cache.get(role.id));
+                }
+            }
+            else {
+                let userData = accountData[member.user.id];
+                if (!userData || (userData.robot && serverData.robot) || (userData.vpn && serverData.vpn)) {
+                    if (member.roles.cache.has(role.id)) {
+                        member.roles.remove(guild.roles.cache.get(role.id));
+                    }
+                }
+                else if (!member.roles.cache.has(role.id)) {
+                    member.roles.add(guild.roles.cache.get(role.id));
+                }
+            }
+        }
+        catch (e) {
+            console.error(e);
+        }
+    });
+}
 
 client.login(config.token);
