@@ -27,10 +27,23 @@ body {
 }
 body header {
   position: sticky;
+  display: flex;
   top: 0;
   z-index: 1000;
   background-color: black;
+  align-items: center;
   padding: 1rem;
+}
+body header .link__login {
+  margin-left: auto;
+  color: white;
+  border: white 1px solid;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+}
+body header .link__login:hover {
+  color: #7fffd2;
+  border-color: #7fffd2;
 }
 body main {
   flex-grow: 1;

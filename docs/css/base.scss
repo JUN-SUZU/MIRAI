@@ -28,10 +28,23 @@ body {
   flex-direction: column;
   header {
     position: sticky;
+    display: flex;
     top: 0;
     z-index: 1000;
     background-color: black;
+    align-items: center;
     padding: 1rem;
+    .link__login {
+      margin-left: auto;
+      color: white;
+      border: white 1px solid;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      &:hover {
+        color: $color;
+        border-color: $color;
+      }
+    }
   }
   main {
     flex-grow: 1;
@@ -55,7 +68,6 @@ body {
         h2 {
           font-size: 1.4rem;
         }
-        
       }
     }
   }
@@ -77,7 +89,7 @@ body {
           color: $color;
         }
       }
-      @media screen and (max-width: 768px){
+      @media screen and (max-width: 768px) {
         flex-direction: column;
       }
     }

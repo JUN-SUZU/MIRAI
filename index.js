@@ -8,7 +8,8 @@ const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-en
 // other modules
 const fs = require('fs');
 const cron = require('node-cron');
-const { channel } = require('diagnostics_channel');
+const database = require('./db.js');
+const db = new database();
 const baseColor = '#7fffd2';
 
 const httpServer = http.createServer((req, res) => {
@@ -52,28 +53,28 @@ const httpServer = http.createServer((req, res) => {
                 let token = data[2].split('=')[1];
                 let discordID = data[3].split('=')[1];
                 let miraiKey = data[4].split('=')[1];
-                let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-                if (!accountData[discordID] || accountData[discordID].miraiKey !== miraiKey) {
+                db.read('account');
+                if (!db.accountData[discordID] || db.accountData[discordID].miraiKey !== miraiKey) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ result: 'fail' }));
                     return;
                 }
-                accountData[discordID].lang = lang;
-                accountData[discordID].age = age;
-                accountData[discordID].ip = ipadr;
-                accountData[discordID].vpn = vpn;
-                accountData[discordID].date = new Date().toLocaleString();
+                db.accountData[discordID].lang = lang;
+                db.accountData[discordID].age = age;
+                db.accountData[discordID].ip = ipadr;
+                db.accountData[discordID].vpn = vpn;
+                db.accountData[discordID].date = new Date().toLocaleString();
                 createAssessment(token).then((score) => {
                     if (score >= 0.8) {
-                        accountData[discordID].robot = false;
+                        db.accountData[discordID].robot = false;
                         res.writeHead(200);
                         res.end(fs.readFileSync('./docs/auth/api/success.html'));
                     } else {
-                        accountData[discordID].robot = true;
+                        db.accountData[discordID].robot = true;
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     }
-                    fs.writeFileSync('./data/account.json', JSON.stringify(accountData, null, 4));
+                    db.write('account');
                     client.guilds.cache.forEach((guild) => {
                         if (guild.members.cache.has(discordID)) {
                             updateRole(guild);
@@ -88,8 +89,8 @@ const httpServer = http.createServer((req, res) => {
                 if (url === '/login/api/') {
                     getDiscordToken(data.code).then((token) => {
                         getUserData(token).then((user) => {
-                            let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-                            let userData = accountData[user.id];
+                            db.read('account');
+                            let userData = db.accountData[user.id];
                             if (!userData) {
                                 userData = {};
                             }
@@ -101,8 +102,8 @@ const httpServer = http.createServer((req, res) => {
                                 verified: user.verified,// メールアドレスが確認済みかどうか
                                 miraiKey: Math.random().toString(36).slice(-8)
                             };
-                            accountData[user.id] = userData;
-                            fs.writeFileSync('./data/account.json', JSON.stringify(accountData, null, 4));
+                            db.accountData[user.id] = userData;
+                            db.write('account');
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({ result: 'success', userID: user.id, miraiKey: userData.miraiKey }));
                         });
@@ -112,8 +113,8 @@ const httpServer = http.createServer((req, res) => {
                     });
                 }
                 else if (url === '/account/api/') {
-                    let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-                    let userData = accountData[data.userID];
+                    db.read('account');
+                    let userData = db.accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
@@ -129,20 +130,20 @@ const httpServer = http.createServer((req, res) => {
                     }));
                 }
                 else if (url === '/setting/servers/api/') {
-                    let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-                    let userData = accountData[data.userID];
+                    db.read('account');
+                    let userData = db.accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
                     let servers = [];
-                    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`))
+                    db.read('server');
                     client.guilds.cache.forEach(guild => {
                         if (!guild.members.cache.has(data.userID)) {
                             return;// メンバーでない場合はスキップ
                         }
-                        if (!serverData[guild.id]) {
+                        if (!db.serverData[guild.id]) {
                             // サーバーの初期設定がされていない場合
                             if (guild.ownerId === data.userID) {
                                 // オーナーのみ
@@ -165,16 +166,16 @@ const httpServer = http.createServer((req, res) => {
                     res.end(JSON.stringify(servers));
                 }
                 else if (url === '/setting/server/api/') {
-                    let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-                    let userData = accountData[data.userID];
+                    db.read('account');
+                    let userData = db.accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`));
-                    if (!serverData[data.serverID]) {
-                        serverData[data.serverID] = {
+                    db.read('server');;
+                    if (!db.serverData[data.serverID]) {
+                        db.serverData[data.serverID] = {
                             country: null,
                             lang: null,
                             danger: true,
@@ -186,34 +187,34 @@ const httpServer = http.createServer((req, res) => {
                             excluded: []
                         };
                     }
-                    serverData[data.serverID].serverName = client.guilds.cache.get(data.serverID).name;
-                    serverData[data.serverID].channels = client.guilds.cache.get(data.serverID).channels.cache.map((channel) => {
+                    db.serverData[data.serverID].serverName = client.guilds.cache.get(data.serverID).name;
+                    db.serverData[data.serverID].channels = client.guilds.cache.get(data.serverID).channels.cache.map((channel) => {
                         return {
                             id: channel.id,
                             name: channel.name
                         };
                     });
-                    serverData[data.serverID].roles = client.guilds.cache.get(data.serverID).roles.cache.map((role) => {
+                    db.serverData[data.serverID].roles = client.guilds.cache.get(data.serverID).roles.cache.map((role) => {
                         return {
                             id: role.id,
                             name: role.name
                         };
                     });
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify(serverData[data.serverID]));
+                    res.end(JSON.stringify(db.serverData[data.serverID]));
                 }
                 else if (url === '/setting/server/update/api/') {
-                    let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-                    let userData = accountData[data.userID];
+                    db.read('account');
+                    let userData = db.accountData[data.userID];
                     if (!userData || userData.miraiKey !== data.miraiKey) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`));
+                    db.read('server');;
                     delete data.miraiKey;
-                    serverData[data.serverID] = data;
-                    fs.writeFileSync(`./data/server.json`, JSON.stringify(serverData, null, 4));
+                    db.serverData[data.serverID] = data;
+                    db.write('server');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ result: 'success' }));
                     updateRole(client.guilds.cache.get(data.serverID));
@@ -235,25 +236,24 @@ function getIPAddress(req) {
     }
 }
 
-let vpnList = JSON.parse(fs.readFileSync('./data/vpn.json'));
-
 function checkVPN(ipadr) {
+    db.read('vpn');
     let vpn = false;
     // http://ip-api.com/json/{query}?fields=status,message,country,countryCode,region,city,timezone,isp,org,proxy にアクセスしてVPNかどうかを判定
-    if (vpnList[ipadr]) {
-        vpn = vpnList[ipadr].vpn;
+    if (db.vpnData[ipadr]) {
+        vpn = db.vpnData[ipadr].vpn;
         return vpn;
     }
     else {
-        vpnList[ipadr] = {};
+        db.vpnData[ipadr] = {};
     }
     fetch(`http://ip-api.com/json/${ipadr}?fields=proxy`)
         .then(response => response.json())
         .then(data => {
             vpn = data.proxy;
             console.log(`VPN: ${vpn}`);
-            vpnList[ipadr].vpn = vpn;
-            fs.writeFileSync('./data/vpn.json', JSON.stringify(vpnList, null, 4));
+            db.vpnData[ipadr].vpn = vpn;
+            db.write('vpn');
             return vpn;
         });
 }
@@ -395,28 +395,28 @@ client.on('guildMemberRemove', async (member) => {
 
 client.on('messageCreate', async (message) => {
     let content = message.content;
-    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`))[message.guild.id];
-    if (!serverData) {
+    db.read('server');
+    if (!db.serverData[message.guild.id]) {
         return;
     }
     // bad keyword 'onlyfan' 'leaks' 'nsfw' 大文字小文字を区別しない
     // @everyone が必ず含まれている場合のみ
-    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i)) && content.includes('@everyone') && serverData.danger) {
-        let blacklist = JSON.parse(fs.readFileSync('./data/blacklist.json'));
-        if (!blacklist[message.author.id]) {
-            blacklist[message.author.id] = {}
+    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i)) && content.includes('@everyone') && db.serverData[message.guild.id].danger) {
+        db.read('blacklist');
+        if (!db.blacklist[message.author.id]) {
+            db.blacklist[message.author.id] = {}
         }
-        blacklist[message.author.id].count = (blacklist[message.author.id].count || 0) + 1;
-        if (!blacklist[message.author.id].log) {
-            blacklist[message.author.id].log = [];
+        db.blacklist[message.author.id].count = (db.blacklist[message.author.id].count || 0) + 1;
+        if (!db.blacklist[message.author.id].log) {
+            db.blacklist[message.author.id].log = [];
         }
-        blacklist[message.author.id].log.push({
+        db.blacklist[message.author.id].log.push({
             date: new Date().toLocaleString(),
             message: content,
             server: message.guild.name,
             channel: message.channel.name,
         });
-        fs.writeFileSync('./data/blacklist.json', JSON.stringify(blacklist, null, 4));
+        db.write('blacklist');
         message.delete();
         message.reply('不適切なメッセージが検出されたため削除しました。');
         // タイムアウトする
@@ -434,26 +434,26 @@ cron.schedule('0 0 * * *', () => {
 });
 
 async function updateRole(guild) {
-    let serverData = JSON.parse(fs.readFileSync(`./data/server.json`))[guild.id];
-    let accountData = JSON.parse(fs.readFileSync('./data/account.json'));
-    if (!serverData) {
+    db.read('server')
+    db.read('account');
+    if (!db.serverData[guild.id]) {
         return;
     }
-    let role = guild.roles.cache.get(serverData.role);
+    let role = guild.roles.cache.get(db.serverData.role);
     if (!role) {
         return;
     }
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
         try {
-            if (serverData.excluded.includes(member.user.username)) {
+            if (db.serverData.excluded.includes(member.user.username)) {
                 if (!member.roles.cache.has(role.id)) {
                     member.roles.add(guild.roles.cache.get(role.id));
                 }
             }
             else {
-                let userData = accountData[member.user.id];
-                if (!userData || (userData.robot && serverData.robot) || (userData.vpn && serverData.vpn)) {
+                let userData = db.accountData[member.user.id];
+                if (!userData || (userData.robot && db.serverData.robot) || (userData.vpn && db.serverData.vpn)) {
                     if (member.roles.cache.has(role.id)) {
                         member.roles.remove(guild.roles.cache.get(role.id));
                     }

@@ -2,7 +2,7 @@ let userID = localStorage.getItem('userID');
 let miraiKey = localStorage.getItem('miraiKey');
 if (userID && miraiKey) {
     // ログイン済みです。と表示し、OKを押すとプロフィールページに遷移キャンセルを押すとログアウトします。
-    let result = confirm('You are already logged in. Do you want to log out?');
+    let result = confirm('You are already logged in. Do you want to log out?\n\nすでにログインしています。ログアウトしますか？');
     if (result) {
         localStorage.removeItem('userID');
         localStorage.removeItem('miraiKey');
