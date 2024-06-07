@@ -54,16 +54,14 @@ const httpServer = http.createServer((req, res) => {
                 let discordID = data[3].split('=')[1];
                 let miraiKey = data[4].split('=')[1];
                 db.read('account');
-                if (!db.accountData[discordID] || db.accountData[discordID].miraiKey !== miraiKey) {
+                if (!db.auth(discordID, miraiKey)) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ result: 'fail' }));
                     return;
                 }
                 db.accountData[discordID].lang = lang;
                 db.accountData[discordID].age = age;
-                db.accountData[discordID].ip = ipadr;
-                db.accountData[discordID].vpn = vpn;
-                db.accountData[discordID].date = new Date().toLocaleString();
+                db.accountData[discordID].authDate = new Date().toLocaleString();
                 createAssessment(token).then((score) => {
                     if (score >= 0.8) {
                         db.accountData[discordID].robot = false;
@@ -77,7 +75,7 @@ const httpServer = http.createServer((req, res) => {
                     db.write('account');
                     client.guilds.cache.forEach((guild) => {
                         if (guild.members.cache.has(discordID)) {
-                            updateRole(guild);
+                            updateRole(guild.id, discordID);
                         }
                     });
                 });
@@ -90,22 +88,29 @@ const httpServer = http.createServer((req, res) => {
                     getDiscordToken(data.code).then((token) => {
                         getUserData(token).then((user) => {
                             db.read('account');
-                            let userData = db.accountData[user.id];
-                            if (!userData) {
-                                userData = {};
+                            let miraiKey = Math.random().toString(36).slice(-8);
+                            if (!db.accountData[user.id]) {
+                                db.accountData[user.id] = {
+                                    username: user.username,
+                                    globalName: user["global_name"],
+                                    email: user.email,
+                                    avatar: `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`,
+                                    verified: user.verified,
+                                    sessions: {}
+                                };
                             }
-                            userData = {
-                                username: user.username,// ユーザー名
-                                globalName: user["global_name"],// 表示名
-                                email: user.email,// Discordアカウントに紐づいているメールアドレス
-                                avatar: `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`,// アバター画像のURL
-                                verified: user.verified,// メールアドレスが確認済みかどうか
-                                miraiKey: Math.random().toString(36).slice(-8)
+                            db.accountData[user.id].sessions[miraiKey] = {
+                                ip: ipadr,
+                                ua: req.headers['user-agent'],
+                                vpn: vpn,
+                                firstdate: new Date().toLocaleString(),
+                                lastdate: new Date().toLocaleString(),
+                                enabled: true
                             };
-                            db.accountData[user.id] = userData;
+                            db.accountData[user.id].lastsession = miraiKey;
                             db.write('account');
                             res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ result: 'success', userID: user.id, miraiKey: userData.miraiKey }));
+                            res.end(JSON.stringify({ result: 'success', userID: user.id, miraiKey: miraiKey }));
                         });
                     }).catch((e) => {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -115,7 +120,7 @@ const httpServer = http.createServer((req, res) => {
                 else if (url === '/account/api/') {
                     db.read('account');
                     let userData = db.accountData[data.userID];
-                    if (!userData || userData.miraiKey !== data.miraiKey) {
+                    if (!db.auth(data.userID, data.miraiKey)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
@@ -125,14 +130,13 @@ const httpServer = http.createServer((req, res) => {
                         username: userData.username,
                         globalName: userData.globalName,
                         avatar: userData.avatar,
-                        authorized: userData.ip ? true : false,
-                        authDate: userData.date
+                        authorized: userData.authDate ? true : false,
+                        authDate: userData.authDate
                     }));
                 }
                 else if (url === '/setting/servers/api/') {
                     db.read('account');
-                    let userData = db.accountData[data.userID];
-                    if (!userData || userData.miraiKey !== data.miraiKey) {
+                    if (!db.auth(data.userID, data.miraiKey)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
@@ -167,13 +171,12 @@ const httpServer = http.createServer((req, res) => {
                 }
                 else if (url === '/setting/server/api/') {
                     db.read('account');
-                    let userData = db.accountData[data.userID];
-                    if (!userData || userData.miraiKey !== data.miraiKey) {
+                    if (!db.auth(data.userID, data.miraiKey)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    db.read('server');;
+                    db.read('server');
                     if (!db.serverData[data.serverID]) {
                         db.serverData[data.serverID] = {
                             country: null,
@@ -187,14 +190,15 @@ const httpServer = http.createServer((req, res) => {
                             excluded: []
                         };
                     }
-                    db.serverData[data.serverID].serverName = client.guilds.cache.get(data.serverID).name;
-                    db.serverData[data.serverID].channels = client.guilds.cache.get(data.serverID).channels.cache.map((channel) => {
+                    let guild = client.guilds.cache.get(data.serverID);
+                    db.serverData[data.serverID].serverName = guild.name;
+                    db.serverData[data.serverID].channels = guild.channels.cache.map((channel) => {
                         return {
                             id: channel.id,
                             name: channel.name
                         };
                     });
-                    db.serverData[data.serverID].roles = client.guilds.cache.get(data.serverID).roles.cache.map((role) => {
+                    db.serverData[data.serverID].roles = guild.roles.cache.map((role) => {
                         return {
                             id: role.id,
                             name: role.name
@@ -205,19 +209,18 @@ const httpServer = http.createServer((req, res) => {
                 }
                 else if (url === '/setting/server/update/api/') {
                     db.read('account');
-                    let userData = db.accountData[data.userID];
-                    if (!userData || userData.miraiKey !== data.miraiKey) {
+                    db.read('server');
+                    if (!db.auth(data.userID, data.miraiKey)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    db.read('server');;
                     delete data.miraiKey;
                     db.serverData[data.serverID] = data;
                     db.write('server');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ result: 'success' }));
-                    updateRole(client.guilds.cache.get(data.serverID));
+                    updateRole(data.serverID);
                 }
             } catch (e) {
                 console.error(e);
@@ -242,6 +245,7 @@ function checkVPN(ipadr) {
     // http://ip-api.com/json/{query}?fields=status,message,country,countryCode,region,city,timezone,isp,org,proxy にアクセスしてVPNかどうかを判定
     if (db.vpnData[ipadr]) {
         vpn = db.vpnData[ipadr].vpn;
+        console.log(`VPN: ${vpn}`);
         return vpn;
     }
     else {
@@ -363,7 +367,7 @@ client.once('ready', async () => {
     client.user.setActivity('Mirai', { type: ActivityType.WATCHING });
     client.guilds.cache.forEach(async (guild) => {
         await guild.members.fetch();
-        updateRole(guild);
+        updateRole(guild.id);
     });
 });
 client.on('guildCreate', async (guild) => {
@@ -429,37 +433,35 @@ client.on('messageCreate', async (message) => {
 // 1日に1回メンバーリストの修正を行う
 cron.schedule('0 0 * * *', () => {
     client.guilds.cache.forEach((guild) => {
-        updateRole(guild);
+        updateRole(guild.id);
     });
 });
 
-async function updateRole(guild) {
+async function updateRole(guildID, discordID = null) {
     db.read('server')
     db.read('account');
-    if (!db.serverData[guild.id]) {
-        return;
-    }
-    let role = guild.roles.cache.get(db.serverData.role);
-    if (!role) {
-        return;
-    }
+    let guild = client.guilds.cache.get(guildID);
+    if (!db.serverData[guildID]) return;
+    let role = guild.roles.cache.get(db.serverData[guildID].role);
+    if (!role) return;
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
+        if (discordID && member.user.id !== discordID) return;
         try {
-            if (db.serverData.excluded.includes(member.user.username)) {
-                if (!member.roles.cache.has(role.id)) {
-                    member.roles.add(guild.roles.cache.get(role.id));
+            if (db.serverData[guildID].excluded.includes(member.user.username)) {
+                if (!member.roles.cache.has(db.serverData[guildID].role)) {
+                    member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
                 }
             }
             else {
                 let userData = db.accountData[member.user.id];
-                if (!userData || (userData.robot && db.serverData.robot) || (userData.vpn && db.serverData.vpn)) {
-                    if (member.roles.cache.has(role.id)) {
-                        member.roles.remove(guild.roles.cache.get(role.id));
+                if (!userData || (userData.robot && db.serverData[guildID].robot) || (userData.vpn && db.serverData[guildID].vpn)) {
+                    if (member.roles.cache.has(db.serverData[guildID].role)) {
+                        member.roles.remove(guild.roles.cache.get(db.serverData[guildID].role));
                     }
                 }
-                else if (!member.roles.cache.has(role.id)) {
-                    member.roles.add(guild.roles.cache.get(role.id));
+                else if (!member.roles.cache.has(db.serverData[guildID].role)) {
+                    member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
                 }
             }
         }

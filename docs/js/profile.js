@@ -23,7 +23,9 @@ fetch('/account/api/', {
                 document.getElementById('auth').style.display = 'none';
             }
         });
-    } else {
+    } else if (res.status === 403) {
+        localStorage.removeItem('userID');
+        localStorage.removeItem('miraiKey');
         window.location.href = '/login/';
     }
 });

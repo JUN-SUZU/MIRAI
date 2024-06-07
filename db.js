@@ -35,6 +35,11 @@ class Database {
                 fs.writeFileSync('./data/vpn.json', JSON.stringify(this.vpnData, null, 4));
         }
     }
+
+    auth(userID, miraiKey) {
+        if(this.accountData[userID] && this.accountData[userID].sessions[miraiKey]) return true;
+        else return false;
+    }
 }
 
 // explaination of data structure
