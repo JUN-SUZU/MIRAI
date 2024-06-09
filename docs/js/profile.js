@@ -29,3 +29,8 @@ fetch('/account/api/', {
         window.location.href = '/login/';
     }
 });
+document.getElementById('logout').onclick = () => {
+    localStorage.removeItem('userID');
+    localStorage.removeItem('miraiKey');
+    window.location.href = '/login/';
+}
