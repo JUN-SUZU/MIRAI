@@ -16,7 +16,7 @@ const httpServer = http.createServer((req, res) => {
     let url = req.url.replace(/\?.*$/, '');
     let method = req.method;
     let ipadr = getIPAddress(req);
-    let vpn = checkVPN(ipadr);
+    checkIP(ipadr);
     if (method === 'GET') {
         console.log(`requested: GET ${url} data: ${req.headers['user-agent']} ip: ${ipadr}`);
         if (url.endsWith('/')) url += 'index.html';
@@ -59,8 +59,10 @@ const httpServer = http.createServer((req, res) => {
                     res.end(JSON.stringify({ result: 'fail' }));
                     return;
                 }
+                db.read('ip');
                 db.accountData[discordID].lang = lang;
                 db.accountData[discordID].age = age;
+                db.accountData[discordID].country = db.ipData[ipadr].countryCode;
                 db.accountData[discordID].authDate = new Date().toLocaleString();
                 createAssessment(token).then((score) => {
                     if (score >= 0.8) {
@@ -85,6 +87,11 @@ const httpServer = http.createServer((req, res) => {
             try {
                 data = JSON.parse(body);
                 if (url === '/login/api/') {
+                    if (!db.ipData[ipadr].status) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
                     getDiscordToken(data.code).then((token) => {
                         getUserData(token).then((user) => {
                             db.read('account');
@@ -102,7 +109,7 @@ const httpServer = http.createServer((req, res) => {
                             db.accountData[user.id].sessions[miraiKey] = {
                                 ip: ipadr,
                                 ua: req.headers['user-agent'],
-                                vpn: vpn,
+                                vpn: db.ipData[ipadr].vpn,
                                 firstdate: new Date().toLocaleString(),
                                 lastdate: new Date().toLocaleString(),
                                 enabled: true
@@ -239,26 +246,25 @@ function getIPAddress(req) {
     }
 }
 
-function checkVPN(ipadr) {
-    db.read('vpn');
-    let vpn = false;
+function checkIP(ipadr) {
+    db.read('ip');
     // http://ip-api.com/json/{query}?fields=status,message,country,countryCode,region,city,timezone,isp,org,proxy にアクセスしてVPNかどうかを判定
-    if (db.vpnData[ipadr]) {
-        vpn = db.vpnData[ipadr].vpn;
-        console.log(`VPN: ${vpn}`);
-        return vpn;
-    }
-    else {
-        db.vpnData[ipadr] = {};
-    }
-    fetch(`http://ip-api.com/json/${ipadr}?fields=proxy`)
+    if (db.ipData[ipadr] && !db.ipData[ipadr].status) return;
+    fetch(`http://ip-api.com/json/${ipadr}?fields=180251`)
         .then(response => response.json())
         .then(data => {
-            vpn = data.proxy;
-            console.log(`VPN: ${vpn}`);
-            db.vpnData[ipadr].vpn = vpn;
-            db.write('vpn');
-            return vpn;
+            if (data.status === 'fail') {
+                console.log(`Failed to get IP data: ${data.message}`);
+                db.ipData[ipadr] = { status: false };
+            }
+            db.ipData[ipadr] = {
+                country: data.country,
+                countryCode: data.countryCode,
+                regionName: data.regionName,
+                city: data.city,
+                vpn: data.proxy
+            };
+            db.write('ip');
         });
 }
 
@@ -444,6 +450,11 @@ async function updateRole(guildID, discordID = null) {
     if (!db.serverData[guildID]) return;
     let role = guild.roles.cache.get(db.serverData[guildID].role);
     if (!role) return;
+    // ロールが自分のロールより上にある場合はスキップ
+    if (role.position > guild.members.cache.get(client.user.id).roles.highest.position) {
+        console.log("HELLO I'M NO PERM;;" + guild.name);
+        return;
+    }
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
         if (discordID && member.user.id !== discordID) return;
@@ -455,7 +466,12 @@ async function updateRole(guildID, discordID = null) {
             }
             else {
                 let userData = db.accountData[member.user.id];
-                if (!userData || (userData.robot && db.serverData[guildID].robot) || (userData.vpn && db.serverData[guildID].vpn)) {
+                if (!userData || (userData.robot && db.serverData[guildID].robot) ||
+                    (userData.vpn && db.serverData[guildID].vpn) ||
+                    userData.age < 13 ||
+                    (db.serverData[guildID].lang && userData.lang !== db.serverData[guildID].lang) ||
+                    (db.serverData[guildID].country && userData.country !== db.serverData[guildID].country) ||
+                    (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0)) {
                     if (member.roles.cache.has(db.serverData[guildID].role)) {
                         member.roles.remove(guild.roles.cache.get(db.serverData[guildID].role));
                     }

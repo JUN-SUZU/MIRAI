@@ -6,7 +6,7 @@ class Database {
         this.accountData = JSON.parse(fs.readFileSync('./data/account.json', 'utf8'));
         this.serverData = JSON.parse(fs.readFileSync('./data/server.json', 'utf8'));
         this.blacklistData = JSON.parse(fs.readFileSync('./data/blacklist.json', 'utf8'));
-        this.vpnData = JSON.parse(fs.readFileSync('./data/vpn.json', 'utf8'));
+        this.ipData = JSON.parse(fs.readFileSync('./data/ip.json', 'utf8'));
     }
 
     read(kind) {
@@ -17,8 +17,8 @@ class Database {
                 this.serverData = JSON.parse(fs.readFileSync('./data/server.json', 'utf8'));
             case 'blacklist':
                 this.blacklistData = JSON.parse(fs.readFileSync('./data/blacklist.json', 'utf8'));
-            case 'vpn':
-                this.vpnData = JSON.parse(fs.readFileSync('./data/vpn.json', 'utf8'));
+            case 'ip':
+                this.ipData = JSON.parse(fs.readFileSync('./data/ip.json', 'utf8'));
 
         }
     }
@@ -31,8 +31,8 @@ class Database {
                 fs.writeFileSync('./data/server.json', JSON.stringify(this.serverData, null, 4));
             case 'blacklist':
                 fs.writeFileSync('./data/blacklist.json', JSON.stringify(this.blacklistData, null, 4));
-            case 'vpn':
-                fs.writeFileSync('./data/vpn.json', JSON.stringify(this.vpnData, null, 4));
+            case 'ip':
+                fs.writeFileSync('./data/ip.json', JSON.stringify(this.ipData, null, 4));
         }
     }
 
@@ -86,8 +86,8 @@ class Database {
 //     }
 // }
 
-// vpnData = {
-//     ip: {
+// ipData = {
+//     ipadress: {
 //         "vpn": boolean,
 //     }
 // }
