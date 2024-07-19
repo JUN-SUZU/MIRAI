@@ -37,7 +37,7 @@ class Database {
     }
 
     auth(userID, miraiKey) {
-        if(this.accountData[userID] && this.accountData[userID].sessions[miraiKey]) return true;
+        if(this.accountData[userID] && this.accountData[userID].sessions[miraiKey] && this.accountData[userID].sessions[miraiKey].enabled) return true;
         else return false;
     }
 }

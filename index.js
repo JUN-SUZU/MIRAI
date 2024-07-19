@@ -137,7 +137,7 @@ const httpServer = http.createServer((req, res) => {
                         username: userData.username,
                         globalName: userData.globalName,
                         avatar: userData.avatar,
-                        authorized: userData.authDate ? true : false,
+                        authorized: userData.authDate && !userData.robot ? true : false,
                         authDate: userData.authDate
                     }));
                 }
@@ -164,7 +164,7 @@ const httpServer = http.createServer((req, res) => {
                                 });
                             }
                         }
-                        else if (guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.ADMINISTRATOR)) {
+                        else if (guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Administrator)) {
                             // サーバーの初期設定がされている場合
                             // 管理者権限を持っている場合は表示
                             servers.push({
@@ -210,7 +210,7 @@ const httpServer = http.createServer((req, res) => {
                             id: role.id,
                             name: role.name
                         };
-                    });
+                    }).filter((role) => role.name !== '@everyone');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(db.serverData[data.serverID]));
                 }
@@ -258,6 +258,7 @@ function checkIP(ipadr) {
                 db.ipData[ipadr] = { status: false };
             }
             db.ipData[ipadr] = {
+                status: true,
                 country: data.country,
                 countryCode: data.countryCode,
                 regionName: data.regionName,
@@ -385,17 +386,24 @@ client.on('guildCreate', async (guild) => {
 });
 // 新規メンバー参加時のイベント
 client.on('guildMemberAdd', async (member) => {
-    // 認証要求メッセージを送信
-    const embed = new EmbedBuilder()
-        .setTitle('認証')
-        .setDescription('認証を行うには、リンクにアクセスしてください。自宅のネットワークからアクセスすることをお勧めします。\n' +
-            `こちらのリンクをクリックしてください: [認証](${config.url}/login/)`)
-        .setColor(baseColor)
-    try {
-        await member.send({ embeds: [embed] });
+    db.read('account');
+    if (!db.accountData[member.user.id]) {
+        // 認証要求メッセージを送信
+        const embed = new EmbedBuilder()
+            .setTitle('認証')
+            .setDescription('認証を行うには、リンクにアクセスしてください。自宅のネットワークからパソコンを使ってアクセスすることをお勧めします。\n' +
+                `こちらのリンクをクリックしてください: [認証](${config.url}/login/)`)
+            .setColor(baseColor)
+        try {
+            await member.send({ embeds: [embed] });
+        }
+        catch (e) {
+            console.log('Could not send DM');
+        }
     }
-    catch (e) {
-        console.log('Could not send DM');
+    else {
+        // ロールの更新
+        updateRole(member.guild.id, member.user.id);
     }
 });
 
@@ -404,23 +412,29 @@ client.on('guildMemberRemove', async (member) => {
 });
 
 client.on('messageCreate', async (message) => {
+    let permission = message.channel.permissionsFor(client.user);
+    if (!permission.has(PermissionsBitField.SendMessages)) return;
     let content = message.content;
     db.read('server');
     if (!db.serverData[message.guild.id]) {
         return;
     }
     // bad keyword 'onlyfan' 'leaks' 'nsfw' 大文字小文字を区別しない
+    // discord.gg/ を含む
     // @everyone が必ず含まれている場合のみ
-    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i)) && content.includes('@everyone') && db.serverData[message.guild.id].danger) {
+    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i)) &&
+        content.includes('@everyone') &&
+        content.includes('https://discord.gg/') &&
+        db.serverData[message.guild.id].danger) {
         db.read('blacklist');
-        if (!db.blacklist[message.author.id]) {
-            db.blacklist[message.author.id] = {}
+        if (!db.blacklistData[message.author.id]) {
+            db.blacklistData[message.author.id] = {}
         }
-        db.blacklist[message.author.id].count = (db.blacklist[message.author.id].count || 0) + 1;
-        if (!db.blacklist[message.author.id].log) {
-            db.blacklist[message.author.id].log = [];
+        db.blacklistData[message.author.id].count = (db.blacklistData[message.author.id].count || 0) + 1;
+        if (!db.blacklistData[message.author.id].log) {
+            db.blacklistData[message.author.id].log = [];
         }
-        db.blacklist[message.author.id].log.push({
+        db.blacklistData[message.author.id].log.push({
             date: new Date().toLocaleString(),
             message: content,
             server: message.guild.name,
@@ -430,8 +444,8 @@ client.on('messageCreate', async (message) => {
         message.delete();
         message.reply('不適切なメッセージが検出されたため削除しました。');
         // タイムアウトする
-        message.author.timeout(60 * 60 * 1000, '不適切なメッセージを送信したため')
-            .then(() => console.log(`${message.author.tag} has been timed out`))
+        message.member.timeout(5 * 60 * 1000, '不適切なメッセージを送信したため')
+            .then(console.log)
             .catch(console.error);
     }
 });
