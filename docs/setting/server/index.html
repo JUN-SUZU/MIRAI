@@ -26,7 +26,7 @@
         <a href="https://mirai.jun-suzu.net" class="logo">
             <h1>MIRAI</h1>
         </a>
-        <a href="../login/" class="link__login">ログイン</a>
+        <a href="../../login/" class="link__login">ログイン</a>
     </header>
     <main>
         <section>
@@ -114,6 +114,11 @@
                     <select id="role"></select>
                 </div>
                 <div class="panel__feature">
+                    <h3>2要素認証</h3>
+                    <p>2要素認証を設定していないユーザーを拒否します。</p>
+                    <input type="checkbox" id="tfa" value="true">
+                </div>
+                <div class="panel__feature">
                     <h3>ロボットの拒否</h3>
                     <p>ロボットのアクセスを拒否します。(この設定は、基本的に無効化できません)</p>
                     <input type="checkbox" id="robot" value="true" checked readonly disabled><!-- ソースコードの書き換えで無効化できる -->
@@ -125,7 +130,7 @@
                 </div>
                 <div class="panel__feature">
                     <h3>除外設定</h3>
-                    <p>特定のユーザーを認証対象から除外します。(信頼できるユーザーのみ除外してください)</p>
+                    <p>特定のユーザーを認証なしでアクセス可能にします。(ユーザーIDを入力してください)</p>
                     <input type="text" id="exclude" placeholder="ユーザーID">
                     <div id="excluded"></div>
                 </div>

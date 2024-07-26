@@ -5,11 +5,16 @@ const { ActionRowBuilder, ActivityType, Client, Collection, EmbedBuilder, Events
 const http = require('http');
 // reCAPTCHA Enterprise
 const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise');
+// 2Factor Authentication
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 // other modules
 const fs = require('fs');
 const cron = require('node-cron');
 const database = require('./db.js');
 const db = new database();
+let tfaWaitingAccount = {};
+let tfaAppSecretCache = {};
 const baseColor = '#7fffd2';
 
 const httpServer = http.createServer((req, res) => {
@@ -64,6 +69,7 @@ const httpServer = http.createServer((req, res) => {
                 db.accountData[discordID].age = age;
                 db.accountData[discordID].country = db.ipData[ipadr].countryCode;
                 db.accountData[discordID].authDate = new Date().toLocaleString();
+                db.accountData[discordID].vpn = db.ipData[ipadr].vpn;
                 createAssessment(token).then((score) => {
                     if (score >= 0.8) {
                         db.accountData[discordID].robot = false;
@@ -106,6 +112,12 @@ const httpServer = http.createServer((req, res) => {
                                     sessions: {}
                                 };
                             }
+                            if(db.accountData[user.id].tfa !== undefined) {
+                                tfaWaitingAccount[user.id] = miraiKey;
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ result: 'tfa', userID: user.id, miraiKey: miraiKey }));
+                                return;
+                            }
                             db.accountData[user.id].sessions[miraiKey] = {
                                 ip: ipadr,
                                 ua: req.headers['user-agent'],
@@ -124,6 +136,38 @@ const httpServer = http.createServer((req, res) => {
                         res.end(JSON.stringify({ result: 'fail' }));
                     });
                 }
+                else if (url === '/login/api/tfa/') {
+                    db.read('account');
+                    if (!tfaWaitingAccount[data.userID]) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    const verified = speakeasy.totp.verify({
+                        secret: db.accountData[data.userID].tfa.app.secret,
+                        encoding: 'base32',
+                        token: data.code
+                    });
+                    if (verified) {
+                        db.accountData[data.userID].sessions[tfaWaitingAccount[data.userID]] = {
+                            ip: ipadr,
+                            ua: req.headers['user-agent'],
+                            vpn: db.ipData[ipadr].vpn,
+                            firstdate: new Date().toLocaleString(),
+                            lastdate: new Date().toLocaleString(),
+                            enabled: true
+                        };
+                        db.accountData[data.userID].lastsession = tfaWaitingAccount[data.userID];
+                        db.write('account');
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'success', userID: data.userID, miraiKey: tfaWaitingAccount[data.userID] }));
+                        delete tfaWaitingAccount[data.userID];
+                    }
+                    else {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                    }
+                }
                 else if (url === '/account/api/') {
                     db.read('account');
                     let userData = db.accountData[data.userID];
@@ -138,8 +182,81 @@ const httpServer = http.createServer((req, res) => {
                         globalName: userData.globalName,
                         avatar: userData.avatar,
                         authorized: userData.authDate && !userData.robot ? true : false,
-                        authDate: userData.authDate
+                        authDate: userData.authDate,
+                        tfa: userData.tfa !== undefined ? true : false,
+                        tfaMethod: userData.tfa !== undefined ? userData.tfa.method : null,
+                        tfaDate: userData.tfa !== undefined ? userData.tfa.date : null
                     }));
+                }
+                else if (url === '/account/logout/') {
+                    db.read('account');
+                    if (!db.auth(data.userID, data.miraiKey)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    db.accountData[data.userID].sessions[data.miraiKey].enabled = false;
+                    db.write('account');
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ result: 'success' }));
+                }
+                else if (url === '/account/tfa/') {
+                    db.read('account');
+                    if (!db.auth(data.userID, data.miraiKey)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    if (data.method === 'app') {
+                        let secret = speakeasy.generateSecret({
+                            length: 20,
+                            name: db.accountData[data.userID].username,
+                            issuer: 'MIRAI'
+                        });
+                        let otpurl = speakeasy.otpauthURL({
+                            secret: secret.ascii,
+                            label: encodeURIComponent(db.accountData[data.userID].username),
+                            issuer: 'MIRAI'
+                        });
+                        let qrFileName = Math.random().toString(36).slice(-8);
+                        QRCode.toFile(`./docs/tfa/qrcode/${qrFileName}.png`, otpurl, function (err) {
+                            if (err) console.error(err);
+                        });
+                        tfaAppSecretCache[data.userID] = secret.base32;
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ QRCode: `${config.url}/tfa/qrcode/${qrFileName}.png`, secret: secret.base32 }));
+                        console.log(`${config.url}/tfa/qrcode/${qrFileName}.png`);
+                    }
+                    else if (data.method === 'appCode') {
+                        const verified = speakeasy.totp.verify({
+                            secret: tfaAppSecretCache[data.userID],
+                            encoding: 'base32',
+                            token: data.code
+                        });
+                        if (verified) {
+                            db.accountData[data.userID].tfa = {
+                                method: 'app',
+                                date: new Date().toLocaleString(),
+                                app: {
+                                    enabled: true,
+                                    secret: tfaAppSecretCache[data.userID]
+                                }
+                            };
+                            db.write('account');
+                            delete tfaAppSecretCache[data.userID];
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ result: 'success' }));
+                            client.guilds.cache.forEach((guild) => {
+                                if (guild.members.cache.has(data.userID)) {
+                                    updateRole(guild.id, data.userID);
+                                }
+                            });
+                        }
+                        else {
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ result: 'fail' }));
+                        }
+                    }
                 }
                 else if (url === '/setting/servers/api/') {
                     db.read('account');
@@ -192,6 +309,7 @@ const httpServer = http.createServer((req, res) => {
                             notice: true,
                             channel: null,
                             role: null,
+                            tfa: false,
                             robot: true,
                             vpn: true,
                             excluded: []
@@ -419,10 +537,10 @@ client.on('messageCreate', async (message) => {
     if (!db.serverData[message.guild.id]) {
         return;
     }
-    // bad keyword 'onlyfan' 'leaks' 'nsfw' 大文字小文字を区別しない
+    // bad keyword 'onlyfan' 'leaks' 'nsfw' 'nudes' 大文字小文字を区別しない
     // discord.gg/ を含む
     // @everyone が必ず含まれている場合のみ
-    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i)) &&
+    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i) || content.match(/nudes/i)) &&
         content.includes('@everyone') &&
         content.includes('https://discord.gg/') &&
         db.serverData[message.guild.id].danger) {
@@ -485,7 +603,8 @@ async function updateRole(guildID, discordID = null) {
                     userData.age < 13 ||
                     (db.serverData[guildID].lang && userData.lang !== db.serverData[guildID].lang) ||
                     (db.serverData[guildID].country && userData.country !== db.serverData[guildID].country) ||
-                    (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0)) {
+                    (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0) ||
+                    (db.serverData[guildID].tfa && userData.tfa == undefined)) {
                     if (member.roles.cache.has(db.serverData[guildID].role)) {
                         member.roles.remove(guild.roles.cache.get(db.serverData[guildID].role));
                     }

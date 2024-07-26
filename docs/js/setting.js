@@ -57,6 +57,8 @@ fetch('/setting/server/api/', {
             if (data.role) {
                 document.getElementById('role').value = data.role;
             }
+            // tfa
+            document.getElementById('tfa').checked = data.tfa;
             // role
             // robot
             // vpn
@@ -120,6 +122,9 @@ document.getElementById('channel').addEventListener('change', () => {
 document.getElementById('role').addEventListener('change', () => {
     showSaveButton();
 });
+document.getElementById('tfa').addEventListener('change', () => {
+    showSaveButton();
+});
 document.getElementById('robot').addEventListener('change', () => {
     showSaveButton();
 });
@@ -155,6 +160,7 @@ document.getElementById('save').addEventListener('click', () => {
         notice: document.getElementById('noticeDM').checked,
         channel: document.getElementById('noticeDM').checked ? null : document.getElementById('channel').value,
         role: document.getElementById('role').value,
+        tfa: document.getElementById('tfa').checked,
         robot: document.getElementById('robot').checked,
         vpn: document.getElementById('vpn').checked,
         excluded: [],
