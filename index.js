@@ -81,11 +81,7 @@ const httpServer = http.createServer((req, res) => {
                         res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     }
                     db.write('account');
-                    client.guilds.cache.forEach((guild) => {
-                        if (guild.members.cache.has(discordID)) {
-                            updateRole(guild.id, discordID);
-                        }
-                    });
+                    updateRole(null, discordID);
                 });
                 return;
             }
@@ -100,6 +96,11 @@ const httpServer = http.createServer((req, res) => {
                     }
                     getDiscordToken(data.code).then((token) => {
                         getUserData(token).then((user) => {
+                            if (!user.id) {
+                                res.writeHead(403, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ result: 'fail' }));
+                                return;
+                            }
                             db.read('account');
                             let miraiKey = Math.random().toString(36).slice(-8);
                             if (!db.accountData[user.id]) {
@@ -112,7 +113,7 @@ const httpServer = http.createServer((req, res) => {
                                     sessions: {}
                                 };
                             }
-                            if(db.accountData[user.id].tfa !== undefined) {
+                            if (db.accountData[user.id].tfa !== undefined) {
                                 tfaWaitingAccount[user.id] = miraiKey;
                                 res.writeHead(200, { 'Content-Type': 'application/json' });
                                 res.end(JSON.stringify({ result: 'tfa', userID: user.id, miraiKey: miraiKey }));
@@ -490,10 +491,7 @@ const client = new Client({
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     client.user.setActivity('Mirai', { type: ActivityType.WATCHING });
-    client.guilds.cache.forEach(async (guild) => {
-        await guild.members.fetch();
-        updateRole(guild.id);
-    });
+    updateRole();
 });
 client.on('guildCreate', async (guild) => {
     // サーバーの所有者に設定画面のURLをDMで送信
@@ -570,20 +568,25 @@ client.on('messageCreate', async (message) => {
 
 // 1日に1回メンバーリストの修正を行う
 cron.schedule('0 0 * * *', () => {
-    client.guilds.cache.forEach((guild) => {
-        updateRole(guild.id);
-    });
+    updateRole();
 });
 
-async function updateRole(guildID, discordID = null) {
+async function updateRole(guildID = null, discordID = null) {
+    if (!guildID) {
+        client.guilds.cache.forEach((guild) => {
+            updateRole(guild.id, discordID);
+        });
+        return;
+    }
     db.read('server')
     db.read('account');
+    db.read('blacklist');
     let guild = client.guilds.cache.get(guildID);
     if (!db.serverData[guildID]) return;
     let role = guild.roles.cache.get(db.serverData[guildID].role);
     if (!role) return;
-    // ロールが自分のロールより上にある場合はスキップ
-    if (role.position > guild.members.cache.get(client.user.id).roles.highest.position) {
+    await guild.members.fetch();
+    if (role.position > guild.members.cache.get(client.user.id).roles.highest.position) {   // ロールが自分のロールより上にある場合はスキップ
         console.log("HELLO I'M NO PERM;;" + guild.name);
         return;
     }
