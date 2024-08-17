@@ -12,6 +12,7 @@ const QRCode = require('qrcode');
 const fs = require('fs');
 const cron = require('node-cron');
 const database = require('./db.js');
+const { parse } = require('path');
 const db = new database();
 let tfaWaitingAccount = {};
 let tfaAppSecretCache = {};
@@ -181,6 +182,12 @@ const httpServer = http.createServer((req, res) => {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
+                    }
+                    let anotherAccount = data.anotherAccount;
+                    if (anotherAccount) {
+                        userData.anotherAccount = parseInt(anotherAccount, 36);
+                        db.accountData[parsedInt(anotherAccount, 36)].anotherAccount = data.userID;
+                        db.write('account');
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({

@@ -3,12 +3,13 @@ let miraiKey = localStorage.getItem('miraiKey');
 if (!userID || !miraiKey) {
     window.location.href = '/login/';
 }
+let anotherAccount = localStorage.getItem('anotherAccount') || null;
 fetch('/account/api/', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ userID: userID, miraiKey: miraiKey }),
+    body: JSON.stringify({ userID: userID, miraiKey: miraiKey, anotherAccount: anotherAccount }),
 }).then((res) => {
     if (res.status === 200) {
         res.json().then((data) => {
@@ -44,6 +45,12 @@ document.getElementById('logout').onclick = () => {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({ userID: userID, miraiKey: miraiKey }),
+    }).then((res) => {
+        if (res.status === 200) {
+            localStorage.setItem('anotherAccount', Number(userID).toString(36));
+        }
+    }).catch(() => {
+        console.log('Error occurred');
     });
     localStorage.removeItem('userID');
     localStorage.removeItem('miraiKey');
