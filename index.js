@@ -551,7 +551,7 @@ client.on('guildMemberRemove', async (member) => {
 
 client.on('messageCreate', async (message) => {
     let permission = message.channel.permissionsFor(client.user);
-    if (!permission.has(PermissionsBitField.SendMessages)) return;
+    if (!permission.has(PermissionsBitField.Flags.SendMessages)) return;
     let content = message.content;
     db.read('server');
     if (!db.serverData[message.guild.id]) {
