@@ -58,6 +58,11 @@ const httpServer = http.createServer((req, res) => {
                 let token = data[2].split('=')[1];
                 let discordID = data[3].split('=')[1];
                 let miraiKey = data[4].split('=')[1];
+                if (!token) {
+                    res.writeHead(403, { 'Content-Type': 'text/html' });
+                    res.end(fs.readFileSync('./docs/auth/api/fail.html'));
+                    return;
+                }
                 db.read('account');
                 if (!db.auth(discordID, miraiKey)) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -77,7 +82,7 @@ const httpServer = http.createServer((req, res) => {
                         res.end(fs.readFileSync('./docs/auth/api/success.html'));
                     } else {
                         db.accountData[discordID].robot = true;
-                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.writeHead(403, { 'Content-Type': 'text/html' });
                         res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     }
                     db.write('account');
