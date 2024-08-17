@@ -1,6 +1,6 @@
 const config = require('./config.json');
 // discord.js
-const { ActionRowBuilder, ActivityType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits, PermissionsBitField } = require('discord.js');
+const { ActionRowBuilder, ActivityType, ChannelType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits, PermissionsBitField } = require('discord.js');
 // http
 const http = require('http');
 // reCAPTCHA Enterprise
@@ -330,18 +330,22 @@ const httpServer = http.createServer((req, res) => {
                     }
                     let guild = client.guilds.cache.get(data.serverID);
                     db.serverData[data.serverID].serverName = guild.name;
-                    db.serverData[data.serverID].channels = guild.channels.cache.map((channel) => {
+                    db.serverData[data.serverID].channels = guild.channels.cache.filter((channel) => {
+                        return channel.type === ChannelType.GuildText;
+                    }).map((channel) => {
                         return {
                             id: channel.id,
                             name: channel.name
                         };
                     });
-                    db.serverData[data.serverID].roles = guild.roles.cache.map((role) => {
+                    db.serverData[data.serverID].roles = guild.roles.cache.filter((role) => {
+                        return role.name !== '@everyone' && !role.managed && role.editable;
+                    }).map((role) => {
                         return {
                             id: role.id,
                             name: role.name
                         };
-                    }).filter((role) => role.name !== '@everyone');
+                    });
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(db.serverData[data.serverID]));
                 }
@@ -590,6 +594,53 @@ cron.schedule('0 0 * * *', () => {
     updateRole();
 });
 
+async function sendNotice(guildID, message) {
+    db.read('server');
+    const guild = client.guilds.cache.get(guildID);
+    if (!db.serverData[guildID] || (db.serverData[guildID] && db.serverData[guildID].notice)) {
+        const owner = await guild.fetchOwner();
+        owner.send(message).catch(e => {
+            console.error(e);
+            console.log('I can\'t tell anything to the owner');
+            return false;
+        }).then(() => {
+            return true;
+        });
+    }
+    else {
+        const channel = guild.channels.cache.get(db.serverData[guildID].channel);
+        if (!channel) return;
+        const permissions = channel.permissionsFor(client.user);
+        if (!permissions.has(PermissionsBitField.ViewChannel) ||
+            !permissions.has(PermissionsBitField.SendMessages) ||
+            !permissions.has(PermissionsBitField.EmbedLinks) ||
+            !permissions.has(PermissionsBitField.AttachFiles) ||
+            channel.type == ChannelType.GuildForum) {
+            const owner = await guild.fetchOwner();
+            owner.send(`通知チャンネルにメッセージを送信する権限がありません。通知チャンネルの権限を確認してください。`)
+                .catch(e => {
+                    console.error(e);
+                    console.log('I can\'t tell anything to the owner');
+                    return false;
+                }).then(() => {
+                    return true;
+                });
+        }
+        else {
+            const embed = new EmbedBuilder()
+                .setTitle('通知')
+                .setDescription(message)
+                .setColor(baseColor);
+            channel.send({ embeds: [embed] }).catch(e => {
+                console.error(e);
+                return false;
+            }).then(() => {
+                return true;
+            });
+        }
+    }
+}
+
 async function updateRole(guildID = null, discordID = null) {
     if (!guildID) {
         client.guilds.cache.forEach((guild) => {
@@ -606,34 +657,15 @@ async function updateRole(guildID = null, discordID = null) {
     if (!role) return;
     await guild.members.fetch();
     let me = guild.members.me;
-    if (role.position > me.roles.highest.position || !me.permissions.has(PermissionsBitField.ManageRoles)) {
+    let lackPermissions = [];
+    if (role.position > me.roles.highest.position) lackPermissions.push('ロールの位置');
+    if (!me.permissions.has(PermissionsBitField.ManageRoles)) lackPermissions.push('ロールの管理');
+    if (!role.editable) lackPermissions.push('設定したロールの編集');
+    if (lackPermissions.length > 0) {
         console.log("HELLO I'M NO PERM;;" + guild.name);
-        if (db.serverData[guildID].notice) {
-            // 鯖主のDMに通知
-            const owner = await guild.fetchOwner();
-            owner.send(`Botのロールが一番上にないため、Botが機能しない可能性があります。ロール\`${role.name}\`の位置を変更するか、Botのロールを一番上に移動してください。Botのロールには「メッセージの管理」権限が必要です。`);
-        }
-        else {
-            const noticeChannel = guild.channels.cache.get(db.serverData[guildID].channel);
-            const permissions = noticeChannel.permissionsFor(me);
-            if (!permissions.has(PermissionsBitField.ViewChannel) ||
-                !permissions.has(PermissionsBitField.SendMessages) ||
-                !permissions.has(PermissionsBitField.EmbedLinks) ||
-                !permissions.has(PermissionsBitField.AttachFiles)) {
-                const owner = await guild.fetchOwner();
-                owner.send(`通知チャンネルにメッセージを送信する権限がありません。通知チャンネルの権限を確認してください。`)
-                    .catch(e => {
-                        console.error(e);
-                        console.log('I can\'t tell anything to the owner');
-                    });
-                return;
-            }
-            noticeChannel.send(`Botのロールが一番上にないため、Botが機能しない可能性があります。ロール\`${role.name}\`の位置を変更するか、Botのロールを一番上に移動してください。Botのロールには「メッセージの管理」権限が必要です。`)
-                .catch(console.error);
-        }
+        sendNotice(guildID, `Botの権限が不足しているため、ロールの更新ができません。次の権限を付与してください: ${lackPermissions.join(', ')}`);
         return;
     }
-    if (!role.editable) return;
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
         if (discordID && member.user.id !== discordID) return;
