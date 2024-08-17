@@ -294,7 +294,7 @@ const httpServer = http.createServer((req, res) => {
                                 });
                             }
                         }
-                        else if (guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Administrator)) {
+                        else if (guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
                             // サーバーの初期設定がされている場合
                             // 管理者権限を持っている場合は表示
                             servers.push({
@@ -500,8 +500,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageTyping,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildMessageTyping
     ]
 });
 client.once('ready', async () => {
@@ -611,10 +610,10 @@ async function sendNotice(guildID, message) {
         const channel = guild.channels.cache.get(db.serverData[guildID].channel);
         if (!channel) return;
         const permissions = channel.permissionsFor(client.user);
-        if (!permissions.has(PermissionsBitField.ViewChannel) ||
-            !permissions.has(PermissionsBitField.SendMessages) ||
-            !permissions.has(PermissionsBitField.EmbedLinks) ||
-            !permissions.has(PermissionsBitField.AttachFiles) ||
+        if (!permissions.has(PermissionsBitField.Flags.ViewChannel) ||
+            !permissions.has(PermissionsBitField.Flags.SendMessages) ||
+            !permissions.has(PermissionsBitField.Flags.EmbedLinks) ||
+            !permissions.has(PermissionsBitField.Flags.AttachFiles) ||
             channel.type == ChannelType.GuildForum) {
             const owner = await guild.fetchOwner();
             owner.send(`通知チャンネルにメッセージを送信する権限がありません。通知チャンネルの権限を確認してください。`)
@@ -659,7 +658,7 @@ async function updateRole(guildID = null, discordID = null) {
     let me = guild.members.me;
     let lackPermissions = [];
     if (role.position > me.roles.highest.position) lackPermissions.push('ロールの位置');
-    if (!me.permissions.has(PermissionsBitField.ManageRoles)) lackPermissions.push('ロールの管理');
+    if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) lackPermissions.push('ロールの管理');
     if (!role.editable) lackPermissions.push('設定したロールの編集');
     if (lackPermissions.length > 0) {
         console.log("HELLO I'M NO PERM;;" + guild.name);
