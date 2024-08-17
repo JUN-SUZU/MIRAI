@@ -490,13 +490,22 @@ const client = new Client({
 });
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
-    client.user.setActivity('Mirai', { type: ActivityType.WATCHING });
+    await client.guilds.fetch();
     updateRole();
+    let memberCount = 0;
+    client.guilds.cache.forEach((guild) => {
+        memberCount += guild.memberCount;
+    });
+    client.user.setActivity(`Mirai | ${memberCount} users`, { type: ActivityType.WATCHING });
 });
 client.on('guildCreate', async (guild) => {
     // サーバーの所有者に設定画面のURLをDMで送信
     const owner = await guild.fetchOwner();
-    owner.send(`このBotの設定画面はこちらです: ${config.url}/setting/server/?id=${guild.id}`);
+    owner.send(`このBotの設定画面はこちらです: ${config.url}/setting/server/?id=${guild.id}`)
+        .catch(e => {
+            console.error(e);
+            console.log('I can\'t tell anything to the owner');
+        });
     // サーバーのメンバーを取得
     guild.members.fetch();
 });
@@ -510,12 +519,10 @@ client.on('guildMemberAdd', async (member) => {
             .setDescription('認証を行うには、リンクにアクセスしてください。自宅のネットワークからパソコンを使ってアクセスすることをお勧めします。\n' +
                 `こちらのリンクをクリックしてください: [認証](${config.url}/login/)`)
             .setColor(baseColor)
-        try {
-            await member.send({ embeds: [embed] });
-        }
-        catch (e) {
-            console.log('Could not send DM');
-        }
+        await member.send({ embeds: [embed] })
+            .catch(e => {
+                console.error(e);
+            });
     }
     else {
         // ロールの更新
@@ -586,39 +593,59 @@ async function updateRole(guildID = null, discordID = null) {
     let role = guild.roles.cache.get(db.serverData[guildID].role);
     if (!role) return;
     await guild.members.fetch();
-    if (role.position > guild.members.cache.get(client.user.id).roles.highest.position) {   // ロールが自分のロールより上にある場合はスキップ
+    let me = guild.members.me;
+    if (role.position > me.roles.highest.position || !me.permissions.has(PermissionsBitField.ManageRoles)) {
         console.log("HELLO I'M NO PERM;;" + guild.name);
+        if (db.serverData[guildID].notice) {
+            // 鯖主のDMに通知
+            const owner = await guild.fetchOwner();
+            owner.send(`Botのロールが一番上にないため、Botが機能しない可能性があります。ロール\`${role.name}\`の位置を変更するか、Botのロールを一番上に移動してください。Botのロールには「メッセージの管理」権限が必要です。`);
+        }
+        else {
+            const noticeChannel = guild.channels.cache.get(db.serverData[guildID].channel);
+            const permissions = noticeChannel.permissionsFor(me);
+            if (!permissions.has(PermissionsBitField.ViewChannel) ||
+                !permissions.has(PermissionsBitField.SendMessages) ||
+                !permissions.has(PermissionsBitField.EmbedLinks) ||
+                !permissions.has(PermissionsBitField.AttachFiles)) {
+                const owner = await guild.fetchOwner();
+                owner.send(`通知チャンネルにメッセージを送信する権限がありません。通知チャンネルの権限を確認してください。`)
+                    .catch(e => {
+                        console.error(e);
+                        console.log('I can\'t tell anything to the owner');
+                    });
+                return;
+            }
+            noticeChannel.send(`Botのロールが一番上にないため、Botが機能しない可能性があります。ロール\`${role.name}\`の位置を変更するか、Botのロールを一番上に移動してください。Botのロールには「メッセージの管理」権限が必要です。`)
+                .catch(console.error);
+        }
         return;
     }
+    if (!role.editable) return;
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
         if (discordID && member.user.id !== discordID) return;
-        try {
-            if (db.serverData[guildID].excluded.includes(member.user.username)) {
-                if (!member.roles.cache.has(db.serverData[guildID].role)) {
-                    member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
-                }
-            }
-            else {
-                let userData = db.accountData[member.user.id];
-                if (!userData || (userData.robot && db.serverData[guildID].robot) ||
-                    (userData.vpn && db.serverData[guildID].vpn) ||
-                    userData.age < 13 ||
-                    (db.serverData[guildID].lang && userData.lang !== db.serverData[guildID].lang) ||
-                    (db.serverData[guildID].country && userData.country !== db.serverData[guildID].country) ||
-                    (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0) ||
-                    (db.serverData[guildID].tfa && userData.tfa == undefined)) {
-                    if (member.roles.cache.has(db.serverData[guildID].role)) {
-                        member.roles.remove(guild.roles.cache.get(db.serverData[guildID].role));
-                    }
-                }
-                else if (!member.roles.cache.has(db.serverData[guildID].role)) {
-                    member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
-                }
+        if (db.serverData[guildID].excluded.includes(member.user.username)) {
+            if (!member.roles.cache.has(db.serverData[guildID].role)) {
+                member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
             }
         }
-        catch (e) {
-            console.error(e);
+        else {
+            let userData = db.accountData[member.user.id];
+            if (!userData || (userData.robot && db.serverData[guildID].robot) ||
+                (userData.vpn && db.serverData[guildID].vpn) ||
+                userData.age < 13 ||
+                (db.serverData[guildID].lang && userData.lang !== db.serverData[guildID].lang) ||
+                (db.serverData[guildID].country && userData.country !== db.serverData[guildID].country) ||
+                (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0) ||
+                (db.serverData[guildID].tfa && userData.tfa == undefined)) {
+                if (member.roles.cache.has(db.serverData[guildID].role)) {
+                    member.roles.remove(guild.roles.cache.get(db.serverData[guildID].role));
+                }
+            }
+            else if (!member.roles.cache.has(db.serverData[guildID].role)) {
+                member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
+            }
         }
     });
 }
