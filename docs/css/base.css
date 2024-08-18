@@ -18,6 +18,22 @@ code {
   font-family: "SF Mono", "Roboto Mono", monospace, sans-serif;
 }
 
+.submit__button {
+  display: block;
+  padding: 1rem 2rem;
+  color: white;
+  background-color: transparent;
+  border: 1px solid #7fffd2;
+  border-radius: 1rem;
+  text-align: center;
+  font-size: 1.5rem;
+  margin: 1rem auto;
+}
+.submit__button:hover {
+  filter: brightness(1.2);
+  cursor: pointer;
+}
+
 body {
   color: white;
   background-color: #2b2b2b;
