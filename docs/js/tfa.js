@@ -18,6 +18,7 @@ function app(){
                 image.src = data.QRCode;
                 document.getElementById('appQRCode').appendChild(image);
                 document.getElementById('appSecret').innerText = data.secret;
+                navigator.clipboard.writeText(data.secret);
                 document.getElementById('codeInput').style.display = 'block';
             });
         } else {
