@@ -186,7 +186,7 @@ const httpServer = http.createServer((req, res) => {
                     let anotherAccount = data.anotherAccount;
                     if (anotherAccount) {
                         userData.anotherAccount = parseInt(anotherAccount, 36);
-                        db.accountData[parsedInt(anotherAccount, 36)].anotherAccount = data.userID;
+                        db.accountData[parseInt(anotherAccount, 36)].anotherAccount = data.userID;
                         db.write('account');
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
