@@ -1,6 +1,6 @@
 const config = require('./config.json');
 // discord.js
-const { ActionRowBuilder, ActivityType, ChannelType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits, PermissionsBitField } = require('discord.js');
+const { ActionRowBuilder, ActivityType, ChannelType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits, PermissionsBitField, getUserAgentAppendix } = require('discord.js');
 // http
 const http = require('http');
 // reCAPTCHA Enterprise
@@ -55,7 +55,7 @@ const httpServer = http.createServer((req, res) => {
             if (url === '/auth/api/') {
                 let data = body.split('&');
                 let lang = data[0].split('=')[1];
-                let age = data[1].split('=')[1];
+                let birthday = data[1].split('=')[1];
                 let token = data[2].split('=')[1];
                 let discordID = data[3].split('=')[1];
                 let miraiKey = data[4].split('=')[1];
@@ -72,7 +72,7 @@ const httpServer = http.createServer((req, res) => {
                 }
                 db.read('ip');
                 db.accountData[discordID].lang = lang;
-                db.accountData[discordID].age = age;
+                db.accountData[discordID].birthday = birthday;
                 db.accountData[discordID].country = db.ipData[ipadr].countryCode;
                 db.accountData[discordID].authDate = new Date().toLocaleString();
                 db.accountData[discordID].vpn = db.ipData[ipadr].vpn;
@@ -186,7 +186,7 @@ const httpServer = http.createServer((req, res) => {
                     let anotherAccount = data.anotherAccount;
                     if (anotherAccount) {
                         userData.anotherAccount = parseInt(anotherAccount, 36);
-                        db.accountData[parsedInt(anotherAccount, 36)].anotherAccount = data.userID;
+                        db.accountData[parseInt(anotherAccount, 36)].anotherAccount = data.userID;
                         db.write('account');
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -677,7 +677,7 @@ async function updateRole(guildID = null, discordID = null) {
             let userData = db.accountData[member.user.id];
             if (!userData || (userData.robot && db.serverData[guildID].robot) ||
                 (userData.vpn && db.serverData[guildID].vpn) ||
-                userData.age < 13 ||
+                getAge(userData.birthday) < 13 ||
                 (db.serverData[guildID].lang && userData.lang !== db.serverData[guildID].lang) ||
                 (db.serverData[guildID].country && userData.country !== db.serverData[guildID].country) ||
                 (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0) ||
@@ -691,6 +691,17 @@ async function updateRole(guildID = null, discordID = null) {
             }
         }
     });
+}
+
+function getAge(birthday) {
+    if (!birthday) return 0;
+    let now = new Date();
+    let birth = new Date(birthday);
+    let age = now.getFullYear() - birth.getFullYear();
+    if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) {
+        age--;
+    }
+    return age;
 }
 
 client.login(config.token);
