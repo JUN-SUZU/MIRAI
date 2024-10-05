@@ -19,6 +19,7 @@
     <link rel="stylesheet" type="text/css" href="../css/reset.css">
     <link rel="stylesheet" type="text/css" href="../css/base.css">
     <link rel="stylesheet" type="text/css" href="../css/contents.css">
+    <link rel="stylesheet" type="text/css" href="../css/login.css">
     <script src="../js/login.js"></script>
 </head>
 
@@ -32,13 +33,14 @@
     <main>
         <section id="login">
             <h2>Discordアカウントでログイン</h2>
-            <a href="https://discord.com/oauth2/authorize?client_id=1188932218056355870&response_type=code&redirect_uri=https%3A%2F%2Fmirai.jun-suzu.net%2Flogin%2F&scope=identify+email">
+            <a
+                href="https://discord.com/oauth2/authorize?client_id=1188932218056355870&response_type=code&redirect_uri=https%3A%2F%2Fmirai.jun-suzu.net%2Flogin%2F&scope=identify+email">
                 Discordアカウントでログイン
             </a>
         </section>
-        <section id="codeInput" style="display: none;">
+        <section id="codeInput" class="code__input">
             <h2>二段階認証コードの入力</h2>
-            <input type="text" id="code" placeholder="二段階認証コード">
+            <input type="text" id="code" placeholder="二段階認証コード" autocomplete="off">
             <button onclick="tfa()">ログイン</button>
         </section>
     </main>

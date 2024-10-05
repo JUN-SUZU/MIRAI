@@ -47,7 +47,7 @@ document.getElementById('logout').onclick = () => {
         body: JSON.stringify({ userID: userID, miraiKey: miraiKey }),
     }).then((res) => {
         if (res.status === 200) {
-            localStorage.setItem('anotherAccount', Number(userID).toString(36));
+            localStorage.setItem('anotherAccount', userID);
         }
     }).catch(() => {
         console.log('Error occurred');
