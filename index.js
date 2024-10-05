@@ -3,6 +3,8 @@ const config = require('./config.json');
 const { ActionRowBuilder, ActivityType, ChannelType, Client, Collection, EmbedBuilder, Events, GatewayIntentBits, PermissionsBitField, getUserAgentAppendix } = require('discord.js');
 // http
 const http = require('http');
+// url
+const { URLSearchParams } = require('url');
 // reCAPTCHA Enterprise
 const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise');
 // 2Factor Authentication
@@ -24,8 +26,18 @@ const httpServer = http.createServer((req, res) => {
     let ipadr = getIPAddress(req);
     checkIP(ipadr);
     if (method === 'GET') {
-        console.log(`requested: GET ${url} data: ${req.headers['user-agent']} ip: ${ipadr}`);
+        console.log(`Method: GET, URL: ${url}, UA: ${req.headers['user-agent']}, ip: ${ipadr}`);
+        // XSS 対策
+        if (req.url.includes('<') || req.url.includes('>')) {
+            // 303 See Other
+            // パラメータを削除してリダイレクト
+            console.log('Redirected');
+            res.writeHead(303, { 'Location': url });
+            res.end();
+            return;
+        }
         if (url.endsWith('/')) url += 'index.html';
+        if (!url.split('/').splice(-1)[0].includes('.')) url += '/index.html';
         if (url.replace('../', '') !== url) {
             res.writeHead(403, { 'Content-Type': 'text/plain' });
             res.end('Forbidden');
@@ -184,9 +196,9 @@ const httpServer = http.createServer((req, res) => {
                         return;
                     }
                     let anotherAccount = data.anotherAccount;
-                    if (anotherAccount) {
-                        userData.anotherAccount = parseInt(anotherAccount, 36);
-                        db.accountData[parseInt(anotherAccount, 36)].anotherAccount = data.userID;
+                    if (anotherAccount && db.accountData[anotherAccount]) {
+                        userData.anotherAccount = anotherAccount;
+                        db.accountData[anotherAccount].anotherAccount = data.userID;
                         db.write('account');
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' });

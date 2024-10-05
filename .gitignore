@@ -1,4 +1,5 @@
-config.json
-data
-boot.sh
-docs/tfa/qrcode
+/config.json
+/boot.sh
+/data/
+/docs/tfa/qrcode
+/node_modules/

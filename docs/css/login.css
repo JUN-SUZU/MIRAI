@@ -1,0 +1,21 @@
+.code__input {
+  display: none;
+}
+.code__input input {
+  display: block;
+  width: 80%;
+  padding: 0.5rem;
+  margin: 1rem auto;
+}
+.code__input input:focus {
+  border-radius: 1rem;
+}
+.code__input button {
+  display: block;
+  width: 80%;
+  padding: 0.5rem;
+  margin: 1rem auto;
+  color: #7fffd2;
+  border: 2px solid #7fffd2;
+  border-radius: 0.5rem;
+}
