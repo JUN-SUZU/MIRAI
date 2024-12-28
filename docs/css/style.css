@@ -15,6 +15,23 @@ a.link__invite:hover {
   transform: scale(1.1);
 }
 
+a.link__setting {
+  display: block;
+  margin: 1rem;
+  padding: 0.5rem;
+  border: 1px solid #7fffd2;
+  border-radius: 5px;
+  text-align: center;
+  color: #7fffd2;
+  text-decoration: none;
+  font-size: 1.2rem;
+}
+@media screen and (max-width: 768px) {
+  a.link__setting {
+    margin: 1rem 0;
+  }
+}
+
 .place__holder {
   display: flex;
   justify-content: center;

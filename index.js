@@ -597,6 +597,7 @@ client.on('messageCreate', async (message) => {
         message.member.timeout(5 * 60 * 1000, '不適切なメッセージを送信したため')
             .then(console.log)
             .catch(console.error);
+        sendNotice(message.guild.id, `不適切なメッセージが検出されました。ユーザー: ${message.author.tag} サーバー: ${message.guild.name} チャンネル: ${message.channel.name} 日時: ${new Date().toLocaleString()} メッセージ: ${content}`);
     }
 });
 
