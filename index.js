@@ -326,7 +326,19 @@ const httpServer = http.createServer((req, res) => {
                         return;
                     }
                     db.read('server');
+                    let guild = client.guilds.cache.get(data.serverID);
+                    guild.members.fetch();
+                    if (!guild.members.cache.has(data.userID)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
                     if (!db.serverData[data.serverID]) {
+                        if (guild.ownerId !== data.userID) {
+                            res.writeHead(403, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ result: 'fail' }));
+                            return;
+                        }
                         db.serverData[data.serverID] = {
                             country: null,
                             lang: null,
@@ -340,7 +352,11 @@ const httpServer = http.createServer((req, res) => {
                             excluded: []
                         };
                     }
-                    let guild = client.guilds.cache.get(data.serverID);
+                    else if (!guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
                     db.serverData[data.serverID].serverName = guild.name;
                     db.serverData[data.serverID].channels = guild.channels.cache.filter((channel) => {
                         return channel.type === ChannelType.GuildText;
@@ -365,6 +381,13 @@ const httpServer = http.createServer((req, res) => {
                     db.read('account');
                     db.read('server');
                     if (!db.auth(data.userID, data.miraiKey)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    let guild = client.guilds.cache.get(data.serverID);
+                    guild.members.fetch();
+                    if (!db.serverData[data.serverID] || !guild.members.cache.has(data.userID) || !guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
