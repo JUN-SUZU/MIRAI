@@ -585,6 +585,17 @@ client.on('guildMemberRemove', async (member) => {
     console.log(`${member.user.tag} has left the server`);
 });
 
+// BOT以外がロールの更新をした時にupdateRoleを実行
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    if (oldMember.roles.cache.size === newMember.roles.cache.size) return;
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 });
+    const logEntry = auditLogs.entries.first();
+    if (!logEntry || logEntry.executor.bot) return;
+    if (logEntry.target.id === newMember.id) {
+        updateRole(newMember.guild.id, newMember.id);
+    }
+});
+
 client.on('messageCreate', async (message) => {
     let permission = message.channel.permissionsFor(client.user);
     if (!permission.has(PermissionsBitField.Flags.SendMessages)) return;
