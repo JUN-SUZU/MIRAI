@@ -374,6 +374,7 @@ const httpServer = http.createServer((req, res) => {
                             name: role.name
                         };
                     });
+                    db.write('server');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(db.serverData[data.serverID]));
                 }
