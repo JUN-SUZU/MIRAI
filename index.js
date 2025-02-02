@@ -357,8 +357,9 @@ const httpServer = http.createServer((req, res) => {
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    db.serverData[data.serverID].serverName = guild.name;
-                    db.serverData[data.serverID].channels = guild.channels.cache.filter((channel) => {
+                    let serverData = db.serverData[data.serverID];
+                    serverData.serverName = guild.name;
+                    serverData.channels = guild.channels.cache.filter((channel) => {
                         return channel.type === ChannelType.GuildText;
                     }).map((channel) => {
                         return {
@@ -366,7 +367,7 @@ const httpServer = http.createServer((req, res) => {
                             name: channel.name
                         };
                     });
-                    db.serverData[data.serverID].roles = guild.roles.cache.filter((role) => {
+                    serverData.roles = guild.roles.cache.filter((role) => {
                         return role.name !== '@everyone' && !role.managed && role.editable;
                     }).map((role) => {
                         return {
@@ -376,7 +377,7 @@ const httpServer = http.createServer((req, res) => {
                     });
                     db.write('server');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify(db.serverData[data.serverID]));
+                    res.end(JSON.stringify(serverData));
                 }
                 else if (url === '/setting/server/update/api/') {
                     db.read('account');
