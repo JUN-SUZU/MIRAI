@@ -357,7 +357,7 @@ const httpServer = http.createServer((req, res) => {
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    let serverData = db.serverData[data.serverID];
+                    let serverData = Object.assign({}, db.serverData[data.serverID]);
                     serverData.serverName = guild.name;
                     serverData.channels = guild.channels.cache.filter((channel) => {
                         return channel.type === ChannelType.GuildText;
