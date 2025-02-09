@@ -326,7 +326,19 @@ const httpServer = http.createServer((req, res) => {
                         return;
                     }
                     db.read('server');
+                    let guild = client.guilds.cache.get(data.serverID);
+                    guild.members.fetch();
+                    if (!guild.members.cache.has(data.userID)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
                     if (!db.serverData[data.serverID]) {
+                        if (guild.ownerId !== data.userID) {
+                            res.writeHead(403, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ result: 'fail' }));
+                            return;
+                        }
                         db.serverData[data.serverID] = {
                             country: null,
                             lang: null,
@@ -340,9 +352,14 @@ const httpServer = http.createServer((req, res) => {
                             excluded: []
                         };
                     }
-                    let guild = client.guilds.cache.get(data.serverID);
-                    db.serverData[data.serverID].serverName = guild.name;
-                    db.serverData[data.serverID].channels = guild.channels.cache.filter((channel) => {
+                    else if (!guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    let serverData = Object.assign({}, db.serverData[data.serverID]);
+                    serverData.serverName = guild.name;
+                    serverData.channels = guild.channels.cache.filter((channel) => {
                         return channel.type === ChannelType.GuildText;
                     }).map((channel) => {
                         return {
@@ -350,7 +367,7 @@ const httpServer = http.createServer((req, res) => {
                             name: channel.name
                         };
                     });
-                    db.serverData[data.serverID].roles = guild.roles.cache.filter((role) => {
+                    serverData.roles = guild.roles.cache.filter((role) => {
                         return role.name !== '@everyone' && !role.managed && role.editable;
                     }).map((role) => {
                         return {
@@ -358,13 +375,21 @@ const httpServer = http.createServer((req, res) => {
                             name: role.name
                         };
                     });
+                    db.write('server');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify(db.serverData[data.serverID]));
+                    res.end(JSON.stringify(serverData));
                 }
                 else if (url === '/setting/server/update/api/') {
                     db.read('account');
                     db.read('server');
                     if (!db.auth(data.userID, data.miraiKey)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    let guild = client.guilds.cache.get(data.serverID);
+                    guild.members.fetch();
+                    if (!db.serverData[data.serverID] || !guild.members.cache.has(data.userID) || !guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
@@ -561,6 +586,17 @@ client.on('guildMemberRemove', async (member) => {
     console.log(`${member.user.tag} has left the server`);
 });
 
+// BOT以外がロールの更新をした時にupdateRoleを実行
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    if (oldMember.roles.cache.size === newMember.roles.cache.size) return;
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 });
+    const logEntry = auditLogs.entries.first();
+    if (!logEntry || logEntry.executor.bot) return;
+    if (logEntry.target.id === newMember.id) {
+        updateRole(newMember.guild.id, newMember.id);
+    }
+});
+
 client.on('messageCreate', async (message) => {
     let permission = message.channel.permissionsFor(client.user);
     if (!permission.has(PermissionsBitField.Flags.SendMessages)) return;
@@ -597,6 +633,7 @@ client.on('messageCreate', async (message) => {
         message.member.timeout(5 * 60 * 1000, '不適切なメッセージを送信したため')
             .then(console.log)
             .catch(console.error);
+        sendNotice(message.guild.id, `不適切なメッセージが検出されました。ユーザー: ${message.author.tag} サーバー: ${message.guild.name} チャンネル: ${message.channel.name} 日時: ${new Date().toLocaleString()} メッセージ: ${content}`);
     }
 });
 
