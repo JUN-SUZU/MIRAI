@@ -1,0 +1,21 @@
+ul {
+    list-style-type: disc;
+    margin-left: 28px;
+    margin-block: 0.5rem;
+}
+
+ol {
+    list-style-type: decimal;
+    margin-left: 28px;
+    margin-block: 0.5rem;
+}
+
+p {
+    margin-left: 8px;
+}
+
+.enforce {
+    font-weight: bold;
+    text-decoration: underline;
+    text-decoration-color: rgb(192, 0, 0);
+}
