@@ -20,11 +20,15 @@ fetch('/setting/server/api/', {
         res.json().then((data) => {
             document.getElementById('serverName').innerText = data.serverName;
             if (data.country) {
+                document.getElementById('specificCountry').checked = true;
+                document.getElementById('country').style.display = 'block';
                 document.getElementById('country').value = data.country;
             }
             // specificCountry
             // country
             if (data.lang) {
+                document.getElementById('specificLang').checked = true;
+                document.getElementById('lang').style.display = 'block';
                 document.getElementById('lang').value = data.lang;
             }
             // specificLang

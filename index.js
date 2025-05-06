@@ -25,8 +25,11 @@ const httpServer = http.createServer((req, res) => {
     let method = req.method;
     let ipadr = getIPAddress(req);
     checkIP(ipadr);
+    if (fs.existsSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`) === false) {
+        fs.writeFileSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`, 'Access Log\n');
+    }
     if (method === 'GET') {
-        console.log(`Method: GET, URL: ${url}, UA: ${req.headers['user-agent']}, ip: ${ipadr}`);
+        fs.appendFileSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`, `GET ${url} ${req.headers['user-agent']} ${ipadr}\n`);
         // XSS 対策
         if (req.url.includes('<') || req.url.includes('>')) {
             // 303 See Other
@@ -63,7 +66,7 @@ const httpServer = http.createServer((req, res) => {
             body += chunk.toString();
         });
         req.on('end', () => {
-            console.log(`requested: POST ${url} data: ${body} ip: ${ipadr}`);
+            fs.appendFileSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`, `POST ${url} ${req.headers['user-agent']} ${ipadr} data: ${body}\n`);
             if (url === '/auth/api/') {
                 let data = body.split('&');
                 let lang = data[0].split('=')[1];
@@ -206,7 +209,7 @@ const httpServer = http.createServer((req, res) => {
                         username: userData.username,
                         globalName: userData.globalName,
                         avatar: userData.avatar,
-                        authorized: userData.authDate && !userData.robot ? true : false,
+                        authorized: userData.authDate && (!userData.robot ? true : false) && (!userData.vpn ? true : false),
                         authDate: userData.authDate,
                         tfa: userData.tfa !== undefined ? true : false,
                         tfaMethod: userData.tfa !== undefined ? userData.tfa.method : null,
@@ -250,7 +253,6 @@ const httpServer = http.createServer((req, res) => {
                         tfaAppSecretCache[data.userID] = secret.base32;
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ QRCode: `${config.url}/tfa/qrcode/${qrFileName}.png`, secret: secret.base32 }));
-                        console.log(`${config.url}/tfa/qrcode/${qrFileName}.png`);
                     }
                     else if (data.method === 'appCode') {
                         const verified = speakeasy.totp.verify({
@@ -418,13 +420,18 @@ function getIPAddress(req) {
     }
 }
 
+let checkingIPList = [];
+
 function checkIP(ipadr) {
     db.read('ip');
     // http://ip-api.com/json/{query}?fields=status,message,country,countryCode,region,city,timezone,isp,org,proxy にアクセスしてVPNかどうかを判定
     if (db.ipData[ipadr] && !db.ipData[ipadr].status) return;
+    if (checkingIPList.includes(ipadr)) return;
+    checkingIPList.push(ipadr);
     fetch(`http://ip-api.com/json/${ipadr}?fields=180251`)
         .then(response => response.json())
         .then(data => {
+            checkingIPList = checkingIPList.filter(ip => ip !== ipadr);
             if (data.status === 'fail') {
                 console.log(`Failed to get IP data: ${data.message}`);
                 db.ipData[ipadr] = { status: false };
@@ -437,6 +444,12 @@ function checkIP(ipadr) {
                 city: data.city,
                 vpn: data.proxy
             };
+            db.write('ip');
+        })
+        .catch(error => {
+            checkingIPList = checkingIPList.filter(ip => ip !== ipadr);
+            console.error(`Error fetching IP data: ${error}`);
+            db.ipData[ipadr] = { status: false };
             db.write('ip');
         });
 }
@@ -537,7 +550,8 @@ const client = new Client({
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageTyping
+        GatewayIntentBits.GuildMessageTyping,
+        GatewayIntentBits.MessageContent
     ]
 });
 client.once('ready', async () => {
