@@ -1,45 +1,41 @@
-const fs = require('fs');
-let dcc = 0;
+const config = require('./config.json');
+const { Client } = require('pg');
 
-class Database {
+class DB {
     constructor() {
-        this.accountData = JSON.parse(fs.readFileSync('./data/account.json', 'utf8'));
-        this.serverData = JSON.parse(fs.readFileSync('./data/server.json', 'utf8'));
-        this.blacklistData = JSON.parse(fs.readFileSync('./data/blacklist.json', 'utf8'));
-        this.ipData = JSON.parse(fs.readFileSync('./data/ip.json', 'utf8'));
+        this.client = new Client({
+            user: config.db.user,
+            host: config.db.host,
+            database: config.db.database,
+            password: config.db.password,
+            port: config.db.port,
+        });
     }
-
-    read(kind) {
-        switch (kind) {
-            case 'account':
-                this.accountData = JSON.parse(fs.readFileSync('./data/account.json', 'utf8'));
-            case 'server':
-                this.serverData = JSON.parse(fs.readFileSync('./data/server.json', 'utf8'));
-            case 'blacklist':
-                this.blacklistData = JSON.parse(fs.readFileSync('./data/blacklist.json', 'utf8'));
-            case 'ip':
-                this.ipData = JSON.parse(fs.readFileSync('./data/ip.json', 'utf8'));
-
+    async connect() {
+        try {
+            await this.client.connect();
+            console.log("PostgreSQLに接続成功");
+        } catch (err) {
+            console.error('接続エラー', err.stack);
         }
     }
-
-    write(kind) {
-        switch (kind) {
-            case 'account':
-                fs.writeFileSync('./data/account.json', JSON.stringify(this.accountData, null, 4));
-            case 'server':
-                fs.writeFileSync('./data/server.json', JSON.stringify(this.serverData, null, 4));
-            case 'blacklist':
-                fs.writeFileSync('./data/blacklist.json', JSON.stringify(this.blacklistData, null, 4));
-            case 'ip':
-                fs.writeFileSync('./data/ip.json', JSON.stringify(this.ipData, null, 4));
+    async disconnect() {
+        try {
+            await this.client.end();
+            console.log("PostgreSQLから切断成功");
+        } catch (err) {
+            console.error('切断エラー', err.stack);
         }
     }
-
-    auth(userID, miraiKey) {
-        if(this.accountData[userID] && this.accountData[userID].sessions[miraiKey] && this.accountData[userID].sessions[miraiKey].enabled) return true;
-        else return false;
+    async query(sql, params) {
+        try {
+            const res = await this.client.query(sql, params);
+            return res.rows;
+        } catch (err) {
+            console.error('クエリエラー', err.stack);
+            throw err;
+        }
     }
-}
+};
 
-module.exports = Database;
+module.exports = DB;
