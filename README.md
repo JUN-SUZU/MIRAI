@@ -1,6 +1,6 @@
 # MIRAI
 
-## MIRAIは、DiscordのセキュリティBOTです。
+## MIRAIは、DiscordのセキュリティBOTです
 
 新規ユーザーの認証を行い、特に危険度の高いユーザーを制限することができます。
 

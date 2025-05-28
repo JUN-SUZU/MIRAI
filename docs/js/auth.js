@@ -1,6 +1,5 @@
-let userID = localStorage.getItem('userID');
-let miraiKey = localStorage.getItem('miraiKey');
-if (!userID || !miraiKey) {
+const loggedIn = document.getElementById('loggedIn');// TODO: Cookie'loggedIn'の登録をお忘れなく
+if (!loggedIn) {
     window.location.href = '/login/';
 }
 const under2 = 'おめでとう！初めての誕生日入力かもね？<br>ママやパパと一緒に、あなたが生まれた奇跡の日を教えてね！<br>あ、キーボード食べないでね～🍭';
@@ -47,8 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function send() {
-    document.getElementById('userID').value = userID;
-    document.getElementById('miraiKey').value = miraiKey;
     grecaptcha.enterprise.ready(async () => {
         grecaptcha.enterprise.execute('6Lc-KespAAAAAAXHezZCb2OKM63wu7MxM3Su7IU_', { action: 'auth' });
     });

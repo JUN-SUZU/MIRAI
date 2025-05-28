@@ -13,10 +13,11 @@ const QRCode = require('qrcode');
 // other modules
 const fs = require('fs');
 const cron = require('node-cron');
-const database = require('./db.js');
+const Database = require('./db.js');
 const { parse } = require('path');
-const db = new database();
-let tfaWaitingAccount = {};
+const { use } = require('react');
+const db = new Database();
+const ipCache = {};
 let tfaAppSecretCache = {};
 const baseColor = '#7fffd2';
 
@@ -25,11 +26,12 @@ const httpServer = http.createServer((req, res) => {
     let method = req.method;
     let ipadr = getIPAddress(req);
     checkIP(ipadr);
-    if (fs.existsSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`) === false) {
-        fs.writeFileSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`, 'Access Log\n');
+    const logFilePath = `./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`;
+    if (!fs.existsSync(logFilePath)) {
+        fs.writeFileSync(logFilePath, 'Access Log\n');
     }
     if (method === 'GET') {
-        fs.appendFileSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`, `GET ${url} ${req.headers['user-agent']} ${ipadr}\n`);
+        fs.appendFileSync(logFilePath, `GET ${url} ${req.headers['user-agent']} ${ipadr}\n`);
         // XSS 対策
         if (req.url.includes('<') || req.url.includes('>')) {
             // 303 See Other
@@ -65,44 +67,53 @@ const httpServer = http.createServer((req, res) => {
         req.on('data', (chunk) => {
             body += chunk.toString();
         });
-        req.on('end', () => {
-            fs.appendFileSync(`./accesslog/${new Date().getMonth() + 1}-${new Date().getDate()}.log`, `POST ${url} ${req.headers['user-agent']} ${ipadr} data: ${body}\n`);
+        req.on('end', async () => {
+            fs.appendFileSync(logFilePath, `POST ${url} ${req.headers['user-agent']} ${ipadr} data: ${body}\n`);
+            // SecureCookieを取得
+            const { user_id, session_id } = parseCookies(req);
             if (url === '/auth/api/') {
                 let data = body.split('&');
                 let lang = data[0].split('=')[1];
                 let birthday = data[1].split('=')[1];
                 let token = data[2].split('=')[1];
-                let discordID = data[3].split('=')[1];
-                let miraiKey = data[4].split('=')[1];
-                if (!token) {
+                if (!lang || !birthday || !token) {
                     res.writeHead(403, { 'Content-Type': 'text/html' });
                     res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     return;
                 }
-                db.read('account');
-                if (!db.auth(discordID, miraiKey)) {
-                    res.writeHead(403, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ result: 'fail' }));
+                const miraiAuth = await db.users.session.update({
+                    session_id: session_id,
+                    user_id: user_id,
+                    ip: ipadr,
+                    last_date: new Date().toISOString(),
+                    expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                });
+                if (miraiAuth !== "authSuccessSessionUpdated") {
+                    res.writeHead(403, { 'Content-Type': 'text/html' });
+                    res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     return;
                 }
-                db.read('ip');
-                db.accountData[discordID].lang = lang;
-                db.accountData[discordID].birthday = birthday;
-                db.accountData[discordID].country = db.ipData[ipadr].countryCode;
-                db.accountData[discordID].authDate = new Date().toLocaleString();
-                db.accountData[discordID].vpn = db.ipData[ipadr].vpn;
-                createAssessment(token).then((score) => {
+                createAssessment(token).then(async (score) => {
+                    let robot = false;
                     if (score >= 0.8) {
-                        db.accountData[discordID].robot = false;
+                        robot = false;
                         res.writeHead(200);
                         res.end(fs.readFileSync('./docs/auth/api/success.html'));
                     } else {
-                        db.accountData[discordID].robot = true;
+                        robot = true;
                         res.writeHead(403, { 'Content-Type': 'text/html' });
                         res.end(fs.readFileSync('./docs/auth/api/fail.html'));
                     }
-                    db.write('account');
-                    updateRole(null, discordID);
+                    await db.users.upsert.auth({
+                        user_id: user_id,
+                        lang: lang,
+                        birthday: birthday,
+                        country: ipDataResponse.rows[0].country,
+                        authDate: new Date().toISOString(),
+                        vpn: ipDataResponse.rows[0].vpn,
+                        robot: robot
+                    });
+                    updateRole(null, user_id);
                 });
                 return;
             }
@@ -110,80 +121,138 @@ const httpServer = http.createServer((req, res) => {
             try {
                 data = JSON.parse(body);
                 if (url === '/login/api/') {
-                    if (!db.ipData[ipadr].status) {
+                    if (!ipCache[ipadr] || !ipCache[ipadr].verified) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    getDiscordToken(data.code).then((token) => {
-                        getUserData(token).then((user) => {
-                            if (!user.id) {
-                                res.writeHead(403, { 'Content-Type': 'application/json' });
-                                res.end(JSON.stringify({ result: 'fail' }));
-                                return;
-                            }
-                            db.read('account');
-                            let miraiKey = Math.random().toString(36).slice(-8);
-                            if (!db.accountData[user.id]) {
-                                db.accountData[user.id] = {
-                                    username: user.username,
-                                    globalName: user["global_name"],
-                                    email: user.email,
-                                    avatar: `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`,
-                                    verified: user.verified,
-                                    sessions: {}
-                                };
-                            }
-                            if (db.accountData[user.id].tfa !== undefined) {
-                                tfaWaitingAccount[user.id] = miraiKey;
-                                res.writeHead(200, { 'Content-Type': 'application/json' });
-                                res.end(JSON.stringify({ result: 'tfa', userID: user.id, miraiKey: miraiKey }));
-                                return;
-                            }
-                            db.accountData[user.id].sessions[miraiKey] = {
-                                ip: ipadr,
-                                ua: req.headers['user-agent'],
-                                vpn: db.ipData[ipadr].vpn,
-                                firstdate: new Date().toLocaleString(),
-                                lastdate: new Date().toLocaleString(),
-                                enabled: true
-                            };
-                            db.accountData[user.id].lastsession = miraiKey;
-                            db.write('account');
-                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ result: 'success', userID: user.id, miraiKey: miraiKey }));
-                        });
-                    }).catch((e) => {
+                    const oauth2TokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            client_id: config.clientID,
+                            client_secret: config.clientSecret,
+                            grant_type: 'authorization_code',
+                            code: data.code,
+                            redirect_uri: config.url + '/login/',
+                            scope: 'identify email'
+                        }),
+                    }).then(res => res.json());
+                    if (!oauth2TokenResponse.access_token) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    const userDataResponse = await fetch('https://discord.com/api/users/@me', {
+                        headers: {
+                            Authorization: `Bearer ${oauth2TokenResponse.access_token}`,
+                        },
+                    }).then(res => res.json());
+                    if (!userDataResponse.id) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    await db.users.upsert.nonAuth({
+                        user_id: userDataResponse.id,
+                        username: userDataResponse.username,
+                        global_name: userDataResponse.global_name || null,
+                        avatar: userDataResponse.avatar || null
                     });
+                    await db.users.upsert.oAuth2({
+                        user_id: userDataResponse.id,
+                        email: userDataResponse.email,
+                        verified: userDataResponse.verified,
+                        refresh_token: oauth2TokenResponse.refresh_token,
+                        discord_token_expires_at: new Date(Date.now() + oauth2TokenResponse.expires_in * 1000).toISOString(),
+                    });
+                    const sessionID = crypto.createHash('sha256').update(Math.random().toString(36).slice(-8)).digest('hex');
+                    // sessionを作成
+                    await db.users.session.insert({
+                        session_id: sessionID,
+                        user_id: userDataResponse.id,
+                        ip: ipadr,
+                        ua: req.headers['user-agent'],
+                        vpn: ipCache[ipadr].vpn,
+                        firstdate: new Date().toLocaleString(),
+                        lastdate: new Date().toLocaleString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString(),
+                        enabled: !dbResponse.rows[0].tfa_enabled
+                    });
+                    // dbResponse.rows[0].tfa_enabledがtrueの場合はTFAを要求する
+                    if (dbResponse.rows[0].tfa_enabled) {
+                        const tfaTimeLimit = 90;
+                        await db.users.tfa.addTemp({
+                            user_id: userDataResponse.id,
+                            session_id: sessionID,
+                            issued_at: new Date().toLocaleString(),
+                            expires_at: new Date(Date.now() + tfaTimeLimit * 1000).toISOString(),
+                        });
+                        res.writeHead(200, {
+                            'Content-Type': 'application/json',
+                            'Set-Cookie': [
+                                `user_id=${userDataResponse.id}; Max-Age=${tfaTimeLimit}; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                                `session_id=${sessionID}; Max-Age=${tfaTimeLimit}; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                            ]
+                        });
+                        res.end(JSON.stringify({ result: 'tfa' }));
+                        return;
+                    }
+                    else {
+                        // 14日間のセッションを作成(14日以内に更新すれば引き続き使用可能)
+                        res.writeHead(200, {
+                            'Content-Type': 'application/json',
+                            'Set-Cookie': [
+                                `user_id=${userDataResponse.id}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                                `session_id=${sessionID}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                            ]
+                        });
+                        res.end(JSON.stringify({ result: 'success' }));
+                    }
                 }
                 else if (url === '/login/api/tfa/') {
-                    db.read('account');
-                    if (!tfaWaitingAccount[data.userID]) {
+                    const tfa_tmp = await db.users.tfa.getTemp({
+                        session_id: data.sessionID,
+                        user_id: user_id
+                    });
+                    if (!tfa_tmp || tfa_tmp.rowCount === 0) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    const secret = await db.users.tfa.getSecret({
+                        user_id: user_id
+                    });
+                    if (!secret) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
                     const verified = speakeasy.totp.verify({
-                        secret: db.accountData[data.userID].tfa.app.secret,
+                        secret: secret,
                         encoding: 'base32',
                         token: data.code
                     });
                     if (verified) {
-                        db.accountData[data.userID].sessions[tfaWaitingAccount[data.userID]] = {
-                            ip: ipadr,
-                            ua: req.headers['user-agent'],
-                            vpn: db.ipData[ipadr].vpn,
-                            firstdate: new Date().toLocaleString(),
-                            lastdate: new Date().toLocaleString(),
-                            enabled: true
-                        };
-                        db.accountData[data.userID].lastsession = tfaWaitingAccount[data.userID];
-                        db.write('account');
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ result: 'success', userID: data.userID, miraiKey: tfaWaitingAccount[data.userID] }));
-                        delete tfaWaitingAccount[data.userID];
+                        // セッションを有効化
+                        await db.users.session.enable({
+                            session_id: data.sessionID,
+                            user_id: user_id
+                        });
+                        res.writeHead(200, {
+                            'Content-Type': 'application/json',
+                            'Set-Cookie': [
+                                `user_id=${user_id}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                                `session_id=${data.sessionID}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                            ]
+                        });
+                        res.end(JSON.stringify({ result: 'success' }));
+                        await db.users.tfa.deleteTemp({
+                            session_id: data.sessionID,
+                            user_id: user_id
+                        });
                     }
                     else {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -191,91 +260,166 @@ const httpServer = http.createServer((req, res) => {
                     }
                 }
                 else if (url === '/account/api/') {
-                    db.read('account');
-                    let userData = db.accountData[data.userID];
-                    if (!db.auth(data.userID, data.miraiKey)) {
+                    const sessionChallenge = await db.users.session.update({
+                        session_id: session_id,
+                        user_id: user_id,
+                        ip: ipadr,
+                        last_date: new Date().toISOString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                    });
+                    const deviceAccounts = data.deviceAccounts;// linked_accountsに追加
+                    if (deviceAccounts) {
+                        // デバイスアカウントarrayを登録
+                        await db.users.link.set(deviceAccounts);
+                    }
+
+                    if (sessionChallenge === "sessionNotFound") {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    let anotherAccount = data.anotherAccount;
-                    if (anotherAccount && db.accountData[anotherAccount]) {
-                        userData.anotherAccount = anotherAccount;
-                        db.accountData[anotherAccount].anotherAccount = data.userID;
-                        db.write('account');
+                    else if (sessionChallenge === "ipNotMatchSessionDisabled") {
+                        if (!ipCache[ipadr] || !ipCache[ipadr].verified) {
+                            res.writeHead(403, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ result: 'fail' }));
+                            return;
+                        }
+                        // 新しいIDでセッションを作成
+                        const sessionID = crypto.createHash('sha256').update(Math.random().toString(36).slice(-8)).digest('hex');
+                        await db.users.session.insert({
+                            session_id: sessionID,
+                            user_id: user_id,
+                            ip: ipadr,
+                            ua: req.headers['user-agent'],
+                            vpn: ipCache[ipadr].vpn,
+                            firstdate: new Date().toLocaleString(),
+                            lastdate: new Date().toLocaleString(),
+                            expires_at: new Date(Date.now() + 1209600 * 1000).toISOString(),
+                            enabled: false
+                        });
+                        // データを取得して返す
+                        const userData = await db.users.getById(user_id);
+                        res.writeHead(200, {
+                            'Content-Type': 'application/json',
+                            'Set-Cookie': [
+                                `user_id=${user_id}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                                `session_id=${sessionID}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                            ]
+                        });
+                        res.end(JSON.stringify({
+                            result: 'success',
+                            username: userData.username,
+                            globalName: userData.globalName,
+                            avatar: userData.avatar,
+                            authorized: userData.authDate && (!userData.robot ? true : false) && (!userData.vpn ? true : false),
+                            authDate: userData.authDate,
+                            tfa: userData.tfa_enabled,
+                            tfaMethod: userData.tfa_method,
+                            tfaDate: userData.tfa_issued_at,
+                        }));
                     }
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        username: userData.username,
-                        globalName: userData.globalName,
-                        avatar: userData.avatar,
-                        authorized: userData.authDate && (!userData.robot ? true : false) && (!userData.vpn ? true : false),
-                        authDate: userData.authDate,
-                        tfa: userData.tfa !== undefined ? true : false,
-                        tfaMethod: userData.tfa !== undefined ? userData.tfa.method : null,
-                        tfaDate: userData.tfa !== undefined ? userData.tfa.date : null
-                    }));
+                    else if (sessionChallenge === "authSuccessSessionUpdated") {
+                        // データを取得して返す
+                        const userData = await db.users.getById(user_id);
+                        res.writeHead(200, {
+                            'Content-Type': 'application/json',
+                            'Set-Cookie': [
+                                `user_id=${user_id}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                                `session_id=${session_id}; Max-Age=1209600; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                            ]
+                        });
+                        res.end(JSON.stringify({
+                            result: 'success',
+                            username: userData.username,
+                            globalName: userData.globalName,
+                            avatar: userData.avatar,
+                            authorized: userData.authDate && (!userData.robot ? true : false) && (!userData.vpn ? true : false),
+                            authDate: userData.authDate,
+                            tfa: userData.tfa_enabled,
+                            tfaMethod: userData.tfa_method,
+                            tfaDate: userData.tfa_issued_at,
+                        }));
+                    }
                 }
                 else if (url === '/account/logout/') {
-                    db.read('account');
-                    if (!db.auth(data.userID, data.miraiKey)) {
+                    const sessionChallenge = await db.users.session.update({
+                        session_id: session_id,
+                        user_id: user_id,
+                        ip: ipadr,
+                        last_date: new Date().toISOString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                    });
+                    if (sessionChallenge !== "authSuccessSessionUpdated") {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    db.accountData[data.userID].sessions[data.miraiKey].enabled = false;
-                    db.write('account');
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    // セッションを無効化
+                    await db.users.session.logout({
+                        session_id: session_id
+                    });
+                    res.writeHead(200, {
+                        'Content-Type': 'application/json',
+                        'Set-Cookie': [
+                            `user_id=; Max-Age=0; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                            `session_id=; Max-Age=0; Secure; HttpOnly; SameSite=None; Domain=.jun-suzu.net; Path=/`,
+                        ]
+                    });
                     res.end(JSON.stringify({ result: 'success' }));
                 }
                 else if (url === '/account/tfa/') {
-                    db.read('account');
-                    if (!db.auth(data.userID, data.miraiKey)) {
+                    const sessionChallenge = await db.users.session.update({
+                        session_id: session_id,
+                        user_id: user_id,
+                        ip: ipadr,
+                        last_date: new Date().toISOString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                    });
+                    if (sessionChallenge !== "authSuccessSessionUpdated") {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
+                    const userDataResponse = await db.users.getById(user_id);
                     if (data.method === 'app') {
                         let secret = speakeasy.generateSecret({
                             length: 20,
-                            name: db.accountData[data.userID].username,
+                            name: userDataResponse.rows[0].username,
                             issuer: 'MIRAI'
                         });
                         let otpurl = speakeasy.otpauthURL({
                             secret: secret.ascii,
-                            label: encodeURIComponent(db.accountData[data.userID].username),
+                            label: encodeURIComponent(userDataResponse.rows[0].username),
                             issuer: 'MIRAI'
                         });
                         let qrFileName = Math.random().toString(36).slice(-8);
                         QRCode.toFile(`./docs/tfa/qrcode/${qrFileName}.png`, otpurl, function (err) {
                             if (err) console.error(err);
                         });
-                        tfaAppSecretCache[data.userID] = secret.base32;
+                        tfaAppSecretCache[user_id] = secret.base32;
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ QRCode: `${config.url}/tfa/qrcode/${qrFileName}.png`, secret: secret.base32 }));
                     }
                     else if (data.method === 'appCode') {
                         const verified = speakeasy.totp.verify({
-                            secret: tfaAppSecretCache[data.userID],
+                            secret: tfaAppSecretCache[user_id],
                             encoding: 'base32',
                             token: data.code
                         });
                         if (verified) {
-                            db.accountData[data.userID].tfa = {
-                                method: 'app',
-                                date: new Date().toLocaleString(),
-                                app: {
-                                    enabled: true,
-                                    secret: tfaAppSecretCache[data.userID]
-                                }
-                            };
-                            db.write('account');
-                            delete tfaAppSecretCache[data.userID];
+                            await db.users.tfa.addMethod({
+                                user_id: user_id,
+                                tfa_enabled: true,
+                                tfa_method: 'app',
+                                tfa_app_secret: tfaAppSecretCache[user_id],
+                                tfa_issued_at: new Date().toISOString()
+                            });
+                            delete tfaAppSecretCache[user_id];
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({ result: 'success' }));
                             client.guilds.cache.forEach((guild) => {
-                                if (guild.members.cache.has(data.userID)) {
-                                    updateRole(guild.id, data.userID);
+                                if (guild.members.cache.has(user_id)) {
+                                    updateRole(guild.id, user_id);
                                 }
                             });
                         }
@@ -286,31 +430,42 @@ const httpServer = http.createServer((req, res) => {
                     }
                 }
                 else if (url === '/setting/servers/api/') {
-                    db.read('account');
-                    if (!db.auth(data.userID, data.miraiKey)) {
+                    const sessionChallenge = await db.users.session.update({
+                        session_id: session_id,
+                        user_id: user_id,
+                        ip: ipadr,
+                        last_date: new Date().toISOString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                    });
+                    if (sessionChallenge !== "authSuccessSessionUpdated") {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
+                    // ユーザーが所属しているサーバーのIDを取得
+                    const memberGuildIds = client.guilds.cache.filter(guild => {
+                        return guild.members.cache.has(user_id);
+                    }).map(guild => {
+                        return guild.id;
+                    });
                     let servers = [];
-                    db.read('server');
-                    client.guilds.cache.forEach(guild => {
-                        if (!guild.members.cache.has(data.userID)) {
-                            return;// メンバーでない場合はスキップ
-                        }
-                        if (!db.serverData[guild.id]) {
-                            // サーバーの初期設定がされていない場合
-                            if (guild.ownerId === data.userID) {
-                                // オーナーのみ
+                    const guildDataResponse = await db.guilds.get(memberGuildIds);
+                    if (!guildDataResponse || guildDataResponse.rowCount === 0) return;
+                    memberGuildIds.forEach(guildId => {
+                        const guild = client.guilds.cache.get(guildId);
+                        if (!guild) return;
+                        const guildData = guildDataResponse.rows.find(guild => guild.guild_id === guildId);
+                        if (!guildData) {
+                            if (guild.ownerId === user_id) {
+                                // 初期設定がされていないサーバーは、オーナーのみ表示
                                 servers.push({
                                     id: guild.id,
                                     name: guild.name
                                 });
                             }
                         }
-                        else if (guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
-                            // サーバーの初期設定がされている場合
-                            // 管理者権限を持っている場合は表示
+                        else if (guild.members.cache.get(user_id).permissions.has(PermissionsBitField.Flags.Administrator)) {
+                            // 初期設定がされているサーバーは、全ての管理者に表示
                             servers.push({
                                 id: guild.id,
                                 name: guild.name
@@ -321,45 +476,33 @@ const httpServer = http.createServer((req, res) => {
                     res.end(JSON.stringify(servers));
                 }
                 else if (url === '/setting/server/api/') {
-                    db.read('account');
-                    if (!db.auth(data.userID, data.miraiKey)) {
+                    const sessionChallenge = await db.users.session.update({
+                        session_id: session_id,
+                        user_id: user_id,
+                        ip: ipadr,
+                        last_date: new Date().toISOString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                    });
+                    if (sessionChallenge !== "authSuccessSessionUpdated") {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    db.read('server');
                     let guild = client.guilds.cache.get(data.serverID);
                     guild.members.fetch();
-                    if (!guild.members.cache.has(data.userID)) {
+                    if (!guild.members.cache.has(user_id)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    if (!db.serverData[data.serverID]) {
-                        if (guild.ownerId !== data.userID) {
-                            res.writeHead(403, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ result: 'fail' }));
-                            return;
-                        }
-                        db.serverData[data.serverID] = {
-                            country: null,
-                            lang: null,
-                            danger: true,
-                            notice: true,
-                            channel: null,
-                            role: null,
-                            tfa: false,
-                            robot: true,
-                            vpn: true,
-                            excluded: []
-                        };
-                    }
-                    else if (!guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    const guildDataResponse = await db.guilds.get([data.serverID]);
+                    if (((!guildDataResponse || guildDataResponse.rowCount === 0) && guild.ownerId !== user_id) ||
+                        !guild.members.cache.has(user_id).permissions.has(PermissionsBitField.Flags.Administrator)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    let serverData = Object.assign({}, db.serverData[data.serverID]);
+                    let serverData = Object.assign({}, guildDataResponse.rows[0]);
                     serverData.serverName = guild.name;
                     serverData.channels = guild.channels.cache.filter((channel) => {
                         return channel.type === ChannelType.GuildText;
@@ -382,23 +525,48 @@ const httpServer = http.createServer((req, res) => {
                     res.end(JSON.stringify(serverData));
                 }
                 else if (url === '/setting/server/update/api/') {
-                    db.read('account');
-                    db.read('server');
-                    if (!db.auth(data.userID, data.miraiKey)) {
+                    const sessionChallenge = await db.users.session.update({
+                        session_id: session_id,
+                        user_id: user_id,
+                        ip: ipadr,
+                        last_date: new Date().toISOString(),
+                        expires_at: new Date(Date.now() + 1209600 * 1000).toISOString()
+                    });
+                    if (sessionChallenge !== "authSuccessSessionUpdated") {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
                     let guild = client.guilds.cache.get(data.serverID);
                     guild.members.fetch();
-                    if (!db.serverData[data.serverID] || !guild.members.cache.has(data.userID) || !guild.members.cache.get(data.userID).permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    if (!guild.members.cache.has(user_id)) {
                         res.writeHead(403, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ result: 'fail' }));
                         return;
                     }
-                    delete data.miraiKey;
-                    db.serverData[data.serverID] = data;
-                    db.write('server');
+                    const guildDataResponse = await db.guilds.get([data.serverID]);
+                    if (((!guildDataResponse || guildDataResponse.rowCount === 0) && guild.ownerId !== user_id) ||
+                        !guild.members.cache.has(user_id).permissions.has(PermissionsBitField.Flags.Administrator)) {
+                        res.writeHead(403, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ result: 'fail' }));
+                        return;
+                    }
+                    // サーバーの設定を更新
+                    db.guilds.set({
+                        guild_id: data.serverID,
+                        name: guild.name,
+                        owner_id: user_id,
+                        lang: data.lang,
+                        country: data.country,
+                        channel_id: data.channel_id,
+                        role_id: data.role_id,
+                        tfa_required: data.tfa_required,
+                        vpn_check: data.vpn_check,
+                        robot_check: data.robot_check,
+                        spam_protection_level: data.spam_protection_level,
+                        auth_exempt_settings: data.auth_exempt_settings,
+                        notice_enabled: data.notice_enabled
+                    });
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ result: 'success' }));
                     updateRole(data.serverID);
@@ -420,69 +588,60 @@ function getIPAddress(req) {
     }
 }
 
+// IPアドレスに関連する情報を取得する
 let checkingIPList = [];
-
-function checkIP(ipadr) {
-    db.read('ip');
+async function checkIP(ipadr) {
     // http://ip-api.com/json/{query}?fields=status,message,country,countryCode,region,city,timezone,isp,org,proxy にアクセスしてVPNかどうかを判定
-    if (db.ipData[ipadr] && !db.ipData[ipadr].status) return;
+    if (!ipCache[ipadr] || !ipCache[ipadr].verified) {
+        ipCache[ipadr] = await db.ipAddresses.get(ipadr).then(res => {
+            if (res.rowCount === 0) {
+                return { verified: false };
+            }
+            else {
+                return res.rows[0];
+            }
+        });
+    }
+    if (ipCache[ipadr].verified) {
+        return;
+    }
     if (checkingIPList.includes(ipadr)) return;
     checkingIPList.push(ipadr);
-    fetch(`http://ip-api.com/json/${ipadr}?fields=180251`)
-        .then(response => response.json())
-        .then(data => {
-            checkingIPList = checkingIPList.filter(ip => ip !== ipadr);
-            if (data.status === 'fail') {
-                console.log(`Failed to get IP data: ${data.message}`);
-                db.ipData[ipadr] = { status: false };
-            }
-            db.ipData[ipadr] = {
-                status: true,
-                country: data.country,
-                countryCode: data.countryCode,
-                regionName: data.regionName,
-                city: data.city,
-                vpn: data.proxy
-            };
-            db.write('ip');
-        })
-        .catch(error => {
-            checkingIPList = checkingIPList.filter(ip => ip !== ipadr);
-            console.error(`Error fetching IP data: ${error}`);
-            db.ipData[ipadr] = { status: false };
-            db.write('ip');
-        });
-}
-
-async function getDiscordToken(code) {
-    const data = {
-        client_id: config.clientID,
-        client_secret: config.clientSecret,
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: config.url + '/login/',
-        scope: 'identify email'
-    };
-    const options = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams(data),
-    };
-    const response = await fetch('https://discord.com/api/oauth2/token', options);
-    const json = await response.json();
-    return json.access_token;
-}
-
-async function getUserData(token) {
-    const options = {
-        headers: {
-            Authorization: `Bearer ${token}`
+    const ipDataResponse = await fetch(`http://ip-api.com/json/${ipadr}?fields=180251`);
+    checkingIPList = checkingIPList.filter(ip => ip !== ipadr);
+    if (ipDataResponse.status !== 200) {
+        console.log(`Failed to get IP data: ${ipDataResponse.statusText}`);
+        if (ipDataResponse.status === 429) {
+            console.log(`Rate limit exceeded for IP: ${ipadr}. Retrying in 30 seconds.`);
+            setTimeout(() => {
+                checkIP(ipadr);
+            }, 1000 * 30);
+            return;
         }
-    };
-    const response = await fetch('https://discord.com/api/users/@me', options);
-    return await response.json();
+    }
+    else {
+        const data = await ipDataResponse.json();
+        if (data.status === 'fail') {
+            console.log(`Failed to get IP data: ${data.message}`);
+            return;
+        }
+        db.ipAddresses.set({
+            address: ipadr,
+            country: data.country,
+            country_code: data.countryCode,
+            region_name: data.regionName,
+            city: data.city,
+            vpn: data.proxy
+        });
+        ipCache[ipadr] = {
+            verified: true,
+            country: data.country,
+            country_code: data.countryCode,
+            region_name: data.regionName,
+            city: data.city,
+            vpn: data.proxy
+        };
+    }
 }
 
 /**
@@ -577,23 +736,30 @@ client.on('guildCreate', async (guild) => {
 });
 // 新規メンバー参加時のイベント
 client.on('guildMemberAdd', async (member) => {
-    db.read('account');
-    if (!db.accountData[member.user.id]) {
-        // 認証要求メッセージを送信
+    // 認証が完了していない場合は、認証を要求するメッセージを送信
+    const userDataResponse = await db.users.getById(member.user.id);
+    if (!userDataResponse || userDataResponse.rowCount === 0) {
+        // ユーザーデータが存在しない場合は、非認証情報を作成
+        await db.users.upsert.nonAuth({
+            user_id: member.user.id,
+            username: member.user.username,
+            global_name: member.user.globalName || null,
+            avatar: member.user.avatar || null
+        });
+    }
+    if (!userDataResponse || userDataResponse.rowCount === 0 || !userDataResponse.rows[0].auth_date) {
         const embed = new EmbedBuilder()
             .setTitle('認証')
             .setDescription('認証を行うには、リンクにアクセスしてください。自宅のネットワークからパソコンを使ってアクセスすることをお勧めします。\n' +
-                `こちらのリンクをクリックしてください: [認証](${config.url}/login/)`)
-            .setColor(baseColor)
+                `こちらのリンクをクリックしてDiscordでログインし、認証プロセスを完了させてください: [認証](${config.url}/login/)`)
+            .setColor(baseColor);
         await member.send({ embeds: [embed] })
             .catch(e => {
                 console.error(e);
             });
     }
-    else {
-        // ロールの更新
-        updateRole(member.guild.id, member.user.id);
-    }
+    // ロールの更新
+    updateRole(member.guild.id, member.user.id);
 });
 
 client.on('guildMemberRemove', async (member) => {
@@ -615,32 +781,25 @@ client.on('messageCreate', async (message) => {
     let permission = message.channel.permissionsFor(client.user);
     if (!permission.has(PermissionsBitField.Flags.SendMessages)) return;
     let content = message.content;
-    db.read('server');
-    if (!db.serverData[message.guild.id]) {
-        return;
-    }
+    const guildDataResponse = await db.guilds.get([message.guild.id]);
+    if (!guildDataResponse || guildDataResponse.rowCount === 0) return;
+    const guildData = guildDataResponse.rows[0];
     // bad keyword 'onlyfan' 'leaks' 'nsfw' 'nudes' 大文字小文字を区別しない
     // discord.gg/ を含む
     // @everyone が必ず含まれている場合のみ
-    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i) || content.match(/nudes/i)) &&
+    if ((content.match(/onlyfan/i) || content.match(/leaks/i) || content.match(/nsfw/i) || content.match(/nudes/i) || content.match(/今すぐ/i)) &&
         content.includes('@everyone') &&
         content.includes('https://discord.gg/') &&
-        db.serverData[message.guild.id].danger) {
-        db.read('blacklist');
-        if (!db.blacklistData[message.author.id]) {
-            db.blacklistData[message.author.id] = {}
-        }
-        db.blacklistData[message.author.id].count = (db.blacklistData[message.author.id].count || 0) + 1;
-        if (!db.blacklistData[message.author.id].log) {
-            db.blacklistData[message.author.id].log = [];
-        }
-        db.blacklistData[message.author.id].log.push({
-            date: new Date().toLocaleString(),
-            message: content,
-            server: message.guild.name,
-            channel: message.channel.name,
+        guildData.spam_protection_level >= 1) {
+        await db.users.restrict.add({
+            user_id: message.author.id,
+            username: message.author.username,
+            reason: '不適切なメッセージを送信したため',
+            restriction_type: 'timeout',
+            action_time: new Date().toISOString(),
+            handler: 'SystemTemp',
+            notes: `メッセージ内容: ${content.substring(0, 30)}...`
         });
-        db.write('blacklist');
         message.delete();
         message.reply('不適切なメッセージが検出されたため削除しました。');
         // タイムアウトする
@@ -657,9 +816,21 @@ cron.schedule('0 0 * * *', () => {
 });
 
 async function sendNotice(guildID, message) {
-    db.read('server');
+    // db.read('server');
+    // const guild = client.guilds.cache.get(guildID);
+    // if (!db.serverData[guildID] || (db.serverData[guildID] && db.serverData[guildID].notice)) {
+    //     const owner = await guild.fetchOwner();
+    //     owner.send(message).catch(e => {
+    //         console.error(e);
+    //         console.log('I can\'t tell anything to the owner');
+    //         return false;
+    //     }).then(() => {
+    //         return true;
+    //     });
+    // }
+    const guildDataResponse = await db.guilds.get([guildID]);
     const guild = client.guilds.cache.get(guildID);
-    if (!db.serverData[guildID] || (db.serverData[guildID] && db.serverData[guildID].notice)) {
+    if (!guildDataResponse || guildDataResponse.rowCount === 0 || guildDataResponse.rows[0].notice_enabled) {
         const owner = await guild.fetchOwner();
         owner.send(message).catch(e => {
             console.error(e);
@@ -670,7 +841,7 @@ async function sendNotice(guildID, message) {
         });
     }
     else {
-        const channel = guild.channels.cache.get(db.serverData[guildID].channel);
+        const channel = guild.channels.cache.get(guildDataResponse.rows[0].channel_id);
         if (!channel) return;
         const permissions = channel.permissionsFor(client.user);
         if (!permissions.has(PermissionsBitField.Flags.ViewChannel) ||
@@ -705,6 +876,7 @@ async function sendNotice(guildID, message) {
 
 async function updateRole(guildID = null, discordID = null) {
     if (!guildID) {
+        await client.guilds.fetch();
         client.guilds.cache.forEach((guild) => {
             updateRole(guild.id, discordID);
         });
@@ -713,9 +885,10 @@ async function updateRole(guildID = null, discordID = null) {
     db.read('server')
     db.read('account');
     db.read('blacklist');
+    const dbGuilds = await db.guilds.get([guildID]);
+    if (!dbGuilds || dbGuilds.rowCount === 0) return;
     let guild = client.guilds.cache.get(guildID);
-    if (!db.serverData[guildID]) return;
-    let role = guild.roles.cache.get(db.serverData[guildID].role);
+    let role = guild.roles.cache.get(dbGuilds.rows[0].role_id);
     if (!role) return;
     await guild.members.fetch();
     let me = guild.members.me;
@@ -731,26 +904,38 @@ async function updateRole(guildID = null, discordID = null) {
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
         if (discordID && member.user.id !== discordID) return;
-        if (db.serverData[guildID].excluded.includes(member.user.username)) {
-            if (!member.roles.cache.has(db.serverData[guildID].role)) {
-                member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
+        const exempt = dbGuilds.rows[0]?.auth_exempt_settings?.[member.user.id]?.expires_at;
+        if (exempt && new Date(exempt) > new Date()) {
+            // 認証免除設定がある場合は、ロールを付与
+            if (!member.roles.cache.has(dbGuilds.rows[0].role_id)) {
+                member.roles.add(guild.roles.cache.get(dbGuilds.rows[0].role_id))
             }
         }
         else {
-            let userData = db.accountData[member.user.id];
-            if (!userData || (userData.robot && db.serverData[guildID].robot) ||
-                (userData.vpn && db.serverData[guildID].vpn) ||
-                getAge(userData.birthday) < 13 ||
-                (db.serverData[guildID].lang && userData.lang !== db.serverData[guildID].lang) ||
-                (db.serverData[guildID].country && userData.country !== db.serverData[guildID].country) ||
-                (db.serverData[guildID].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0) ||
-                (db.serverData[guildID].tfa && userData.tfa == undefined)) {
-                if (member.roles.cache.has(db.serverData[guildID].role)) {
-                    member.roles.remove(guild.roles.cache.get(db.serverData[guildID].role));
-                }
+            // let userData = db.accountData[member.user.id];
+            const userDataResponse = db.users.getById(member.user.id);
+            if (!userDataResponse || userDataResponse.rowCount === 0 || userDataResponse.rows[0].auth_date == null ||
+                (userDataResponse.rows[0].vpn && dbGuilds.rows[0].vpn_check) ||
+                (userDataResponse.rows[0].robot && dbGuilds.rows[0].robot_check) ||
+                getAge(userDataResponse.rows[0].birthday) < 13 ||
+                (dbGuilds.rows[0].lang && userDataResponse.rows[0].lang !== dbGuilds.rows[0].lang) ||
+                (dbGuilds.rows[0].country && userDataResponse.rows[0].country !== dbGuilds.rows[0].country) ||
+                (dbGuilds.rows[0].danger && db.blacklistData[member.user.id] && db.blacklistData[member.user.id].count > 0) ||
+                (dbGuilds.rows[0].tfa_required && !userDataResponse.rows[0].tfa_enabled)) {
+                    // ユーザーデータが存在しない、または認証されていない、または認証条件を満たしていない場合は、ロールを削除
+                    if (member.roles.cache.has(dbGuilds.rows[0].role_id)) {
+                        member.roles.remove(guild.roles.cache.get(dbGuilds.rows[0].role_id))
+                            .catch(e => {
+                                console.error(`Failed to remove role from ${member.user.tag}: ${e.message}`);
+                            });
+                    }
             }
-            else if (!member.roles.cache.has(db.serverData[guildID].role)) {
-                member.roles.add(guild.roles.cache.get(db.serverData[guildID].role));
+            else if (!member.roles.cache.has(dbGuilds.rows[0].role_id)) {
+                // ユーザーデータが存在し、認証されている場合は、ロールを付与
+                member.roles.add(guild.roles.cache.get(dbGuilds.rows[0].role_id))
+                    .catch(e => {
+                        console.error(`Failed to add role to ${member.user.tag}: ${e.message}`);
+                    });
             }
         }
     });
