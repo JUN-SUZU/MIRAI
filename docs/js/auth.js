@@ -6,7 +6,7 @@ if (!userID || !miraiKey) {
 const under2 = 'おめでとう！初めての誕生日入力かもね？<br>ママやパパと一緒に、あなたが生まれた奇跡の日を教えてね！<br>あ、キーボード食べないでね～🍭';
 const under5 = 'お誕生日を教えてくれる？そうすれば“あなたの日”をみんなでお祝いできるよ！<br>' +
     '魔法の数字だから、間違えないようにね✨<br>でも、もし分からなかったらパパやママに助けてもらってね！';
-const under10 = '誕生日を教えてくれる？秘密にしないでね！<br>教えてくれたら、特別な日を超ハッピーにする計画ができるかも!? 🎉<br>さあ、本当の日を入れてみて！';
+const under9 = '誕生日を教えてくれる？秘密にしないでね！<br>教えてくれたら、特別な日を超ハッピーにする計画ができるかも!? 🎉<br>さあ、本当の日を入れてみて！';
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('birthday').addEventListener('change', (event) => {
         const birthday = event.target.value;
@@ -22,14 +22,14 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (age < 5) {
             document.getElementById('alertBirthday').innerHTML = under5;
         }
-        else if (age < 10) {
-            document.getElementById('alertBirthday').innerHTML = under10;
+        else if (age < 9) {
+            document.getElementById('alertBirthday').innerHTML = under9;
         }
         else {
             document.getElementById('alertBirthday').innerHTML = '';
             document.getElementsByClassName('alert__birthday')[0].style.display = 'none';
         }
-        if (age < 10) {
+        if (age < 9) {
             document.getElementsByClassName('alert__birthday')[0].style.display = 'block';
         }
     });
