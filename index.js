@@ -134,6 +134,12 @@ const httpServer = http.createServer((req, res) => {
                                     sessions: {}
                                 };
                             }
+                            console.log(user);
+                            db.accountData[user.id].username = user.username;
+                            db.accountData[user.id].globalName = user["global_name"];
+                            db.accountData[user.id].avatar = `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`;
+                            db.accountData[user.id].email = user.email;
+                            db.accountData[user.id].verified = user.verified;
                             if (db.accountData[user.id].tfa !== undefined) {
                                 tfaWaitingAccount[user.id] = miraiKey;
                                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -615,6 +621,19 @@ client.on('messageCreate', async (message) => {
     let permission = message.channel.permissionsFor(client.user);
     if (!permission.has(PermissionsBitField.Flags.SendMessages)) return;
     let content = message.content;
+    if (!message.author.bot && content) {
+        // <@123456789012345678> を ""に置換
+        // <:emoji:123456789012345678> を ""に置換
+        // 複数の空白やタブは1つの空白に置換
+        let plainText = content.replace(/<@!?(\d+)>/g, '')
+            .replace(/<a?:\w+:(\d+)>/g, '')
+            .replace(/\t/g, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(/\n/g, ' ');
+        if (plainText.length > 10) {
+            fs.appendFileSync(`./messagelog/${message.guildId}.log`, `user:${message.author.username} ${plainText}\n`);
+        }
+    }
     db.read('server');
     if (!db.serverData[message.guild.id]) {
         return;
