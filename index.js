@@ -46,6 +46,23 @@ const httpServer = http.createServer((req, res) => {
             res.end('Forbidden');
             return;
         }
+        if (url.startsWith('/invite/')) fs.readFile(`./docs/invite/index.html`, (err, data) => {
+            let dataStr = data.toString();
+            let linkCode = url.split('/')[2];
+            const server = db.lookUpLinkCode(linkCode);
+            if (server) {
+                dataStr = dataStr.replace('サーバー名', server.serverName);
+                dataStr = dataStr.replace('ギルドID', server.id);
+                data = Buffer.from(dataStr);
+            }
+            else {
+                res.writeHead(303, { 'Location': '/' });
+                res.end();
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(data);
+        });
         fs.readFile(`./docs${url}`, (err, data) => {
             if (err) {
                 res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -56,21 +73,6 @@ const httpServer = http.createServer((req, res) => {
                 else if (url.endsWith('.js')) res.writeHead(200, { 'Content-Type': 'text/javascript' });
                 else if (url.endsWith('.ico')) res.writeHead(200, { 'Content-Type': 'image/x-icon' });
                 else res.writeHead(200);
-                if (url.startsWith('/invite/')) {
-                    let dataStr = data.toString();
-                    let linkCode = url.split('/')[2];
-                    const server = db.lookUpLinkCode(linkCode);
-                    if (server) {
-                        dataStr = dataStr.replace('サーバー名', server.serverName);
-                        dataStr = dataStr.replace('ギルドID', server.id);
-                        data = Buffer.from(dataStr);
-                    }
-                    else {
-                        res.writeHead(303, { 'Location': '/' });
-                        res.end();
-                        return;
-                    }
-                }
                 res.end(data);
             }
         });

@@ -79,7 +79,7 @@ fetch('/setting/server/api/', {
 
             // inviteProxy
             document.getElementById('inviteProxy').checked = data.inviteProxy || false;
-            document.getElementById('customInvite').value = data.inviteURL;
+            document.getElementById('customInvite').value = data.inviteURL || '';
             document.getElementById('inviteURL').innerText = `https://mirai.jun-suzu.net/invite/${data.inviteURL}`;
         });
     } else {
