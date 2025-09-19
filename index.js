@@ -420,6 +420,9 @@ const httpServer = http.createServer((req, res) => {
                         return;
                     }
                     delete data.miraiKey;
+                    if (data.inviteProxy && !data.inviteURL) {
+                        data.inviteURL = Math.random().toString(36).slice(-8);
+                    }
                     db.serverData[data.serverID] = data;
                     db.write('server');
                     res.writeHead(200, { 'Content-Type': 'application/json' });

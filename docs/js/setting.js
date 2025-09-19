@@ -208,6 +208,7 @@ document.getElementById('save').addEventListener('click', () => {
         vpn: document.getElementById('vpn').checked,
         excluded: [],
         inviteProxy: document.getElementById('inviteProxy').checked,
+        inviteURL: document.getElementById('customInvite').value,
     };
     document.getElementById('excluded').childNodes.forEach((user) => {
         data.excluded.push(user.id);
