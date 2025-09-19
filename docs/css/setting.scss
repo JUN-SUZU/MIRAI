@@ -70,3 +70,58 @@
     background-color: #7f7f7f;
   }
 }
+
+.textbox {
+  width: 60%;
+  height: 32px;
+  border: 1px solid #8b98a5;
+  border-radius: 6px;
+  margin: 8px 0;
+  padding: 4px 8px;
+  font-size: 16px;
+  color: #ffffff;
+  background-color: #2f3136;
+  &:focus {
+    outline: none;
+    border: 1px solid #00ff00;
+    box-shadow: 0 0 5px #00ff00;
+  }
+}
+
+.cautions {
+  background-color: #3a3b3c;
+  border-left: 4px solid #ffcc00;
+  padding: 8px;
+  margin: 8px 0;
+  p {
+    margin: 0;
+    color: #ffcc00;
+  }
+}
+
+.errors {
+  background-color: #3a3b3c;
+  border-left: 4px solid #ff3300;
+  padding: 8px;
+  margin: 8px 0;
+  p {
+    margin: 0;
+    color: #ff3300;
+  }
+  display: none;
+  @keyframes DropdownError {
+    0% {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+.errors.show {
+  display: block;
+  animation: DropdownError 0.3s ease-out;
+}

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="robots" content="noindex,follow">
+    <meta content="MIRAIは、DiscordのセキュリティBOTです。" name="description">
+    <meta name="keywords" content="MIRAI,Discord,BOT,セキュリティ,認証">
+    <meta name="author" content="JUN-SUZU">
+    <meta name="cpr" content="© 2024 JUN-SUZU">
+    <meta name="language" content="ja">
+    <meta name="format-detection" content="telephone=no,email=no,address=no">
+    <meta name="theme-color" content="#7fffd2">
+    <link rel="canonical" href="https://mirai.jun-suzu.net/">
+    <link rel="icon" href="../assets/img/favicon.ico">
+    <title>MIRAI</title>
+    <link rel="stylesheet" type="text/css" href="../css/reset.css">
+    <link rel="stylesheet" type="text/css" href="../css/invite.css">
+    <script src="../js/invite.js"></script>
+    <span id="guildId">ギルドID</span>
+</head>
+
+<body>
+    <div class="container">
+        <h1>招待リンクを生成</h1>
+        <p>以下のボタンを押すと <span id="guildName" class="guild-name">サーバー名</span> の招待を受けることができます。</p>
+        <p class="note">※この招待は30秒間のみ有効です。</p>
+        <button class="invite-button" onclick="handleInvite()">招待を受ける</button>
+    </div>
+    <div class="message-box">
+        <p id="alertMessage" class="alert-message"></p>
+        <button class="close-button" onclick="closeMessageBox()">閉じる</button>
+    </div>
+</body>
+
+</html>

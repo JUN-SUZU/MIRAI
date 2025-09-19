@@ -1,5 +1,5 @@
 const fs = require('fs');
-let dcc = 0;
+let linkcache = {};
 
 class Database {
     constructor() {
@@ -7,6 +7,7 @@ class Database {
         this.serverData = JSON.parse(fs.readFileSync('./data/server.json', 'utf8'));
         this.blacklistData = JSON.parse(fs.readFileSync('./data/blacklist.json', 'utf8'));
         this.ipData = JSON.parse(fs.readFileSync('./data/ip.json', 'utf8'));
+        this.linkcache = {};
     }
 
     read(kind) {
@@ -39,6 +40,17 @@ class Database {
     auth(userID, miraiKey) {
         if(this.accountData[userID] && this.accountData[userID].sessions[miraiKey] && this.accountData[userID].sessions[miraiKey].enabled) return true;
         else return false;
+    }
+
+    // invite link code look up
+    lookUpLinkCode(linkCode) {
+        this.read('server');
+        for (const serverID in this.serverData) {
+            if (this.serverData[serverID].inviteURL === linkCode) {
+                return serverID;
+            }
+        }
+        return null;
     }
 }
 

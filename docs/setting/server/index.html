@@ -36,7 +36,8 @@
                 <div class="panel__feature">
                     <h3>国設定</h3>
                     <p>アクセス可能な国を設定します。</p>
-                    <input type="checkbox" id="specificCountry" class="checkbox" value="true" onclick="countryChange();">
+                    <input type="checkbox" id="specificCountry" class="checkbox" value="true"
+                        onclick="countryChange();">
                     <select id="country" style="display: none;">
                         <option value="JP">日本</option>
                         <option value="US">アメリカ</option>
@@ -102,16 +103,20 @@
                     <h3>通知設定</h3>
                     <p>管理者のみが見れる手段で通知を送信します。</p>
                     <label for="noticeDM">DM</label>
-                    <input type="radio" id="noticeDM" class="radio" name="notice" value="DM" checked onclick="noticeChange();">
+                    <input type="radio" id="noticeDM" class="radio" name="notice" value="DM" checked
+                        onclick="noticeChange();">
                     <label for="noticeChannel">Channel</label>
-                    <input type="radio" id="noticeChannel" class="radio" name="notice" value="Channel" onclick="noticeChange();">
+                    <input type="radio" id="noticeChannel" class="radio" name="notice" value="Channel"
+                        onclick="noticeChange();">
                     <select id="channel" style="display: none;"></select>
                 </div>
                 <div class="panel__feature">
                     <h3>ロール設定</h3>
                     <p>認証後に付与するロールを設定します。</p>
-                    <p>※@everyoneの権限は、必ず最低に設定してください。</p>
-                    <p>※@everyoneは指定できません。</p>
+                    <div class="cautions">
+                        <p>※@everyoneの権限は、必ず最低に設定してください。</p>
+                        <p>※@everyoneは指定できません。</p>
+                    </div>
                     <select id="role"></select>
                 </div>
                 <div class="panel__feature">
@@ -122,18 +127,41 @@
                 <div class="panel__feature">
                     <h3>ロボットの拒否</h3>
                     <p>ロボットのアクセスを拒否します。(この設定は、基本的に無効化できません)</p>
-                    <input type="checkbox" id="robot" class="checkbox" value="true" checked readonly disabled><!-- ソースコードの書き換えで無効化できる -->
+                    <input type="checkbox" id="robot" class="checkbox" value="true" checked readonly
+                        disabled><!-- ソースコードの書き換えで無効化できる -->
                 </div>
                 <div class="panel__feature">
                     <h3>VPNの拒否</h3>
                     <p>VPNのアクセスを拒否します。(この設定は、基本的に無効化できません)</p>
-                    <input type="checkbox" id="vpn" class="checkbox" value="true" checked readonly disabled><!-- ソースコードの書き換えで無効化できる -->
+                    <input type="checkbox" id="vpn" class="checkbox" value="true" checked readonly
+                        disabled><!-- ソースコードの書き換えで無効化できる -->
                 </div>
                 <div class="panel__feature">
                     <h3>認証免除設定</h3>
                     <p>特定のユーザーを認証なしでアクセス可能にします。(ユーザーIDを入力してください)</p>
-                    <input type="text" id="exclude" placeholder="ユーザーID">
+                    <input type="text" id="exclude" class="textbox" placeholder="ユーザーID">
                     <div id="excluded"></div>
+                </div>
+            </div>
+        </section>
+        <section>
+            <h2>招待リンクプロキシ</h2>
+            <div class="place__holder">
+                <div class="panel__feature">
+                    <h3>招待リンクプロキシ</h3>
+                    <p>MIRAIで設定したリンクを経由しないとサーバーに参加できないようにします。</p>
+                    <input type="checkbox" id="inviteProxy" class="checkbox" value="true">
+                </div>
+                <div class="panel__feature">
+                    <h3>カスタマイズ招待リンク</h3>
+                    <p>招待リンクをカスタマイズします。</p>
+                    <input type="text" id="customInvite" class="textbox" placeholder="例: mirai" maxlength="32" autocomplete="off">
+                    <div class="cautions">
+                        <p class="note">※空欄の場合、ランダムな文字列が生成されます。</p>
+                        <p class="note">※使用できる文字は、英数字とハイフン(-)とアンダースコア(_)のみです。</p>
+                        <p class="note">※招待リンクは、<span id="inviteURL"></span>の形式になります。</p>
+                    </div>
+                    <p class="errors" id="invalidInviteURL"></p>
                 </div>
             </div>
         </section>

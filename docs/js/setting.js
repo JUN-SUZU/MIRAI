@@ -7,7 +7,7 @@ if (!userID || !miraiKey) {
     window.location.href = '/login/';
 }
 if (!serverID) {
-    // window.location.href = '/setting/';
+    window.location.href = '/setting/';
 }
 fetch('/setting/server/api/', {
     method: 'POST',
@@ -76,7 +76,11 @@ fetch('/setting/server/api/', {
                     document.getElementById('excluded').appendChild(user);
                 });
             }
-            // excluded
+
+            // inviteProxy
+            document.getElementById('inviteProxy').checked = data.inviteProxy || false;
+            document.getElementById('customInvite').value = data.inviteURL;
+            document.getElementById('inviteURL').innerText = `https://mirai.jun-suzu.net/invite/${data.inviteURL}`;
         });
     } else {
         window.location.href = '/setting/';
@@ -152,6 +156,41 @@ document.getElementById('excluded').addEventListener('click', (e) => {
         showSaveButton();
     }
 });
+document.getElementById('inviteProxy').addEventListener('change', () => {
+    showSaveButton();
+});
+document.getElementById('customInvite').addEventListener('change', () => {
+    // 許可する文字列: 大文字小文字英数字 ハイフン アンダースコア ❗✨🤟😁👍🙌🍖😋🍴🙏🌟👉👈
+    const invalidChars = /^[A-Za-z0-9_-❗✨🤟😁👍🙌🍖😋🍴🙏🌟👉👈]+$/u;
+    const customInvite = document.getElementById('customInvite').value;
+    if (!invalidChars.test(customInvite)) {
+        document.getElementById('invalidInviteURL').innerText = '招待URLに使用できない文字が含まれています。使用できるのは、英数字とハイフン(-)とアンダースコア(_)のみです。';
+        document.getElementById('invalidInviteURL').classList.add('show');
+        return;
+    }
+    if (customInvite.length < 3 || customInvite.length > 32) {
+        document.getElementById('invalidInviteURL').innerText = '招待URLは3文字以上32文字以下で指定してください。';
+        document.getElementById('invalidInviteURL').classList.add('show');
+        return;
+    }
+    fetch('/setting/server/check_invite/api/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ customInvite: customInvite }),
+    }).then(res => res.json())
+        .then(data => {
+            if (data.result === 'error') {
+                document.getElementById('invalidInviteURL').innerText = 'この招待URLは既に使用されています。別のものを指定してください。';
+                document.getElementById('invalidInviteURL').classList.add('show');
+            } else {
+                document.getElementById('inviteURL').innerText = `https://mirai.jun-suzu.net/invite/${document.getElementById('customInvite').value}`;
+                showSaveButton();
+                document.getElementById('invalidInviteURL').classList.remove('show');
+            }
+        });
+});
 
 document.getElementById('save').addEventListener('click', () => {
     let data = {
@@ -168,6 +207,7 @@ document.getElementById('save').addEventListener('click', () => {
         robot: document.getElementById('robot').checked,
         vpn: document.getElementById('vpn').checked,
         excluded: [],
+        inviteProxy: document.getElementById('inviteProxy').checked,
     };
     document.getElementById('excluded').childNodes.forEach((user) => {
         data.excluded.push(user.id);
