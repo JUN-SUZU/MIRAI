@@ -458,7 +458,7 @@ const httpServer = http.createServer((req, res) => {
                     if (!serverID) {
                         returnFail();
                     }
-                    client.guilds.cache.fetch(serverID).then(async guild => {
+                    client.guilds.fetch(serverID).then(async guild => {
                         if (!guild) {
                             returnFail();
                         }
