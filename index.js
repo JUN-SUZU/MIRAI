@@ -46,24 +46,26 @@ const httpServer = http.createServer((req, res) => {
             res.end('Forbidden');
             return;
         }
-        if (url.startsWith('/invite/')) fs.readFile(`./docs/invite/index.html`, (err, data) => {
-            let dataStr = data.toString();
-            let linkCode = url.split('/')[2];
-            const server = db.lookUpLinkCode(linkCode);
-            if (server) {
-                dataStr = dataStr.replace('サーバー名', server.serverName);
-                dataStr = dataStr.replace('ギルドID', server.id);
-                data = Buffer.from(dataStr);
-            }
-            else {
-                res.writeHead(303, { 'Location': '/' });
-                res.end();
-                return;
-            }
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(data);
+        if (url.startsWith('/invite/')) {
+            fs.readFile(`./docs/invite/index.html`, (err, data) => {
+                let dataStr = data.toString();
+                let linkCode = url.split('/')[2];
+                const serverId = db.lookUpLinkCode(linkCode);
+                if (serverId) {
+                    dataStr = dataStr.replace('サーバー名', client.guilds.cache.get(serverId).name);
+                    dataStr = dataStr.replace('ギルドID', serverId);
+                    data = Buffer.from(dataStr);
+                }
+                else {
+                    res.writeHead(303, { 'Location': '/' });
+                    res.end();
+                    return;
+                }
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(data);
+            });
             return;
-        });
+        }
         fs.readFile(`./docs${url}`, (err, data) => {
             if (err) {
                 res.writeHead(404, { 'Content-Type': 'text/plain' });
