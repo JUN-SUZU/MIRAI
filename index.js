@@ -458,6 +458,9 @@ const httpServer = http.createServer((req, res) => {
                     if (!serverID) {
                         returnFail();
                     }
+                    if (db.ipData[ipadr].vpn) {
+                        returnFail();
+                    }
                     client.guilds.fetch(serverID).then(async guild => {
                         if (!guild) {
                             returnFail();
